@@ -57,19 +57,31 @@ Configuration
 * Configuration is straightforward.  Here is an example multitun.conf:
 
 	[all]
+
 	serv_addr = 192.168.1.22
+
 	serv_port = 80
+
 	tun_nm = 255.255.255.0
+
 	tun_mtu = 1500
+
 	encrypt = 1
+
 	key = akey
 
+
 	[server]
+
 	tun_dev = tun0
+
 	tun_addr = 10.10.0.1
 
+
 	[client]
+
 	tun_dev = tun0
+
 	tun_addr = 10.10.0.2
 
 
