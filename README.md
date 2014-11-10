@@ -1,8 +1,11 @@
 Multitun v0.1 -- 'Tunnel all the things!'
+
 Joshua Davis (multitun -*- covert.codes)
+
 http://covert.codes
 
 Copyright(C) 2014, Joshua Davis
+
 Released under the GNU General Public License
 
 Introduction
