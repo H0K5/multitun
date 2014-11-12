@@ -45,7 +45,7 @@ Usage
   interface, and raw sockets (e.g. run as root)
 
 * Make sure on the server side that the listen port is allowed through
-  your server-side host and network firewalls
+  the host and network firewalls
 
 
 Configuration
@@ -73,50 +73,41 @@ Configuration
 Examples
 ========
 
-* Simple usage, access ssh on your server using multitun:
-	server# multitun -s
-	client# multitun
-	client# ssh 10.10.0.1
+* Simple usage, access ssh on your server using multitun:  
+	server# multitun -s  
+	client# multitun  
+	client# ssh 10.10.0.1  
 
 
 * Use Linux as a NAT gateway for your host behind the firewall:
 
-   (Configure the server)
+   *Configure the server*
 
    * Include the following in your multitun server iptables configuration.
      In this config, eth0 is the server external interface, tun1 is the
      server multitun interface, and 10.10.0.0/255.255.255.0 is the multitun
      IP range.
 
-    *nat
-    -A POSTROUTING -s 10.10.0.0/255.255.255.0 -o eth0 -j MASQUERADE
+    *nat  
+    -A POSTROUTING -s 10.10.0.0/255.255.255.0 -o eth0 -j MASQUERADE  
+    COMMIT  
 
-    COMMIT
-
-    -A INPUT -s 10.10.0.0/255.255.255.0 -j ACCEPT
-
-    -A FORWARD -i tun1 -j ACCEPT
-
-    -A FORWARD -s 10.10.0.0/255.255.255.0 -j ACCEPT
-
-    -A FORWARD -p ALL -m state --state ESTABLISH,RELATED -j ACCEPT
+    -A INPUT -s 10.10.0.0/255.255.255.0 -j ACCEPT  
+    -A FORWARD -i tun1 -j ACCEPT  
+    -A FORWARD -s 10.10.0.0/255.255.255.0 -j ACCEPT  
+    -A FORWARD -p ALL -m state --state ESTABLISH,RELATED -j ACCEPT  
 
    * Enable IP forwarding:
 
    echo 1 > /proc/sys/net/ipv4/ip_forward
 
-
-   (Configure the client)
+   *Configure the client*
+   
    * Take care of routing:
-
 	
-    ip route add [server ext. ip] via [client gw ip] dev [client dev] proto static
-
-    ip route del default
-
-    ip route add default via [client multitun local ip] dev [client tun] proto static
-
-   (Then start the server and client multitun processes)
+    ip route add [server ext. ip] via [client gw ip] dev [client dev] proto static  
+    ip route del default  
+    ip route add default via [client multitun local ip] dev [client tun] proto static  
 
 
 Bugs
