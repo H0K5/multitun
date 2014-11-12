@@ -1,6 +1,6 @@
 #!/usr/bin/env python2.7
 
-# multitun v0.1
+# multitun v0.2
 #
 # Joshua Davis (multitun -*- covert.codes)
 # http://covert.codes
@@ -20,9 +20,14 @@ from autobahn.twisted.websocket import WebSocketServerFactory
 from autobahn.twisted.websocket import WebSocketServerProtocol
 from autobahn.twisted.websocket import WebSocketClientFactory
 from autobahn.twisted.websocket import WebSocketClientProtocol
-from Crypto.Cipher import ARC4
+from Crypto.Cipher import AES
+from Crypto.Hash import SHA224
+from Crypto import Random
 
 configfile = "multitun.conf"
+
+MT_VERSION= "0.2"
+KEYLEN = 16 # bytes
 EXIT_ERR = -1
 
 
@@ -35,8 +40,8 @@ class WSServerFactory(WebSocketServerFactory):
 			self.sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
 			self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
 		except:
-			print "Could not create raw socket"
-			sys.exit(EXIT_ERR)
+			log.msg("Could not create raw socket", logLevel=logging.WARN)
+			reactor.stop()
 	
 
 	def tunnel_write(self, data):
@@ -44,7 +49,7 @@ class WSServerFactory(WebSocketServerFactory):
 		try:
 			self.proto.tunnel_write(data)
 		except:
-			log.msg("*** Couldn't reach the client over the WebSocket.", logLevel=logging.WARN)
+			log.msg("Couldn't reach the client over the WebSocket.", logLevel=logging.WARN)
 			reactor.stop()
 
 
@@ -67,13 +72,23 @@ class WSServerProto(WebSocketServerProtocol):
 	def onMessage(self, data, isBinary):
 		"""Get data from the server WebSocket, send to the TUN"""
 		if self.factory.encrypt == 1:
-			data = self.factory.rc4.decrypt(data)
+			if self.factory.iv == 0:
+				self.factory.iv = data[:AES.block_size]
+				self.factory.aes = AES.new(self.factory.key, AES.MODE_CFB, self.factory.iv)
+
+				data = data[AES.block_size:]
+				data = self.factory.aes.decrypt(data)
+			else:
+				data = self.factory.aes.decrypt(data)
 
 		self.factory.tun.tun.write(data)
 	
 
 	def tunnel_write(self, data):
-		"""Server sends data received on TUN out to net"""
+		"""Server: TUN sends data through the WebSocket to the client"""
+		if self.factory.encrypt == 1:
+			data = self.factory.aes.encrypt(data)
+
 		self.sendMessage(data, isBinary=True)
 
 
@@ -85,21 +100,21 @@ class WSClientFactory(WebSocketClientFactory):
 			self.sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
 			self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
 		except socket.error, errmsg:
-			print "Could not create raw socket: " + str(msg[0]) + ':' + msg[1]
-			sys.exit(EXIT_ERR)
+			print "Could not create raw socket: " + str(errmsg[0]) + ': ' + errmsg[1]
+			reactor.stop()
 
 
 	def tunnel_write(self, data):
-		"""WS client: receive data from TUN"""
+		"""WS client: Receive data from TUN"""
 		try:
 			self.proto.tunnel_write(data)
 		except:
-			log.msg("*** Couldn't reach the server over the WebSocket.  Is it running?  Firewalled?", logLevel=logging.WARN)
+			log.msg("Couldn't reach the server over the WebSocket.  Is it running?  Firewalled?", logLevel=logging.WARN)
 			reactor.stop()
 
 
 class WSClientProto(WebSocketClientProtocol):
-	"""WebSocket client protocol callbacks"""
+	"""WS client: WebSocket client protocol callbacks"""
 
 	def onConnect(self, response):
 		log.msg("WebSocket connected", logLevel=logging.INFO)
@@ -115,13 +130,20 @@ class WSClientProto(WebSocketClientProtocol):
 	
 
 	def onMessage(self, data, isBinary):
+		if self.factory.encrypt == 1:
+			data = self.factory.aes.decrypt(data)
+
 		self.factory.tun.tun.write(data)
-	
+
 
 	def tunnel_write(self, data):
-		"""Here, the TUN sends data through the WebSocket to the server"""
+		"""Client: TUN sends data through the WebSocket to the server"""
 		if self.factory.encrypt == 1:
-			data = self.factory.rc4.encrypt(data)
+			if self.factory.set_iv != 0:
+				data = self.factory.set_iv + self.factory.aes.encrypt(data)
+				self.factory.set_iv = 0
+			else:
+				data = self.factory.aes.encrypt(data)
 
 		self.sendMessage(data, isBinary=True)
 
@@ -184,8 +206,8 @@ class Server(object):
 		self.wsfactory = WSServerFactory(path, debug=False)
 		self.wsfactory.protocol = WSServerProto
 		self.wsfactory.encrypt = self.encrypt
-		if(self.encrypt == 1):
-			self.wsfactory.rc4 = ARC4.new(self.key)
+		self.wsfactory.key = self.key
+		self.wsfactory.iv = 0
 
 		reactor.listenTCP(int(listen_port), self.wsfactory)
 
@@ -216,8 +238,11 @@ class Client(object):
 		self.wsfactory = WSClientFactory(path, debug=False)
 		self.wsfactory.protocol = WSClientProto
 		self.wsfactory.encrypt = self.encrypt
+
 		if(self.encrypt == 1):
-			self.wsfactory.rc4 = ARC4.new(self.key)
+			iv = Random.new().read(AES.block_size)
+			self.wsfactory.set_iv = iv
+			self.wsfactory.aes = AES.new(self.key, AES.MODE_CFB, iv)
 
 		reactor.connectTCP(self.serv_addr, int(self.serv_port), self.wsfactory)
 
@@ -239,7 +264,7 @@ def main():
 			server = True
 
 	print " =============================================="
-	print " Multitun v0.1"
+	print " Multitun " + MT_VERSION
 	print " By Joshua Davis (multitun -*- covert.codes)"
 	print " http://covert.codes"
 	print " Copyright(C) 2014"
@@ -255,12 +280,15 @@ def main():
 	tun_nm = config.all.tun_nm
 	tun_mtu = config.all.tun_mtu
 	encrypt = int(config.all.encrypt)
-	key = config.all.key
+	passphrase = config.all.passphrase
 
+	key = ''
 	if encrypt == 1:
-		if len(key) == 0:
+		if len(passphrase) == 0:
 			log.msg("Edit the configuration file to include a key (a ten character password will do for many applications.", logLevel=logging.WARN)
 			sys.exit(EXIT_ERR)
+
+		key = SHA224.new(data=passphrase).digest()[:KEYLEN]
 
 	if server == True:
 		tun_dev = config.server.tun_dev
