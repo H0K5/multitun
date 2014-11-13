@@ -1,6 +1,6 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2.7
 
-# multitun v0.2
+# multitun v0.3
 #
 # Joshua Davis (multitun -*- covert.codes)
 # http://covert.codes
@@ -20,14 +20,13 @@ from autobahn.twisted.websocket import WebSocketServerFactory
 from autobahn.twisted.websocket import WebSocketServerProtocol
 from autobahn.twisted.websocket import WebSocketClientFactory
 from autobahn.twisted.websocket import WebSocketClientProtocol
-from Crypto.Cipher import ARC4
 from Crypto.Cipher import AES
 from Crypto.Hash import SHA224
 from Crypto import Random
 
 configfile = "multitun.conf"
 
-MT_VERSION= "v0.2"
+MT_VERSION= "v0.3"
 KEYLEN = 16 # bytes
 EXIT_ERR = -1
 
@@ -103,8 +102,8 @@ class WSClientFactory(WebSocketClientFactory):
 		try:
 			self.sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
 			self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
-		except socket.error, errmsg:
-			print "Could not create raw socket: " + str(errmsg[0]) + ': ' + errmsg[1]
+		except:
+			log.msg("Error creating raw socket in WSClientFactory", logLevel=logging.WARN)
 
 
 	def tunnel_write(self, data):
