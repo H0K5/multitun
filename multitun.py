@@ -1,4 +1,4 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python
 
 # multitun v0.2
 #
@@ -20,13 +20,14 @@ from autobahn.twisted.websocket import WebSocketServerFactory
 from autobahn.twisted.websocket import WebSocketServerProtocol
 from autobahn.twisted.websocket import WebSocketClientFactory
 from autobahn.twisted.websocket import WebSocketClientProtocol
+from Crypto.Cipher import ARC4
 from Crypto.Cipher import AES
 from Crypto.Hash import SHA224
 from Crypto import Random
 
 configfile = "multitun.conf"
 
-MT_VERSION= "0.2"
+MT_VERSION= "v0.2"
 KEYLEN = 16 # bytes
 EXIT_ERR = -1
 
@@ -50,7 +51,7 @@ class WSServerFactory(WebSocketServerFactory):
 			self.proto.tunnel_write(data)
 		except:
 			log.msg("Couldn't reach the client over the WebSocket.", logLevel=logging.WARN)
-			reactor.stop()
+			pass
 
 
 class WSServerProto(WebSocketServerProtocol):
@@ -81,7 +82,10 @@ class WSServerProto(WebSocketServerProtocol):
 			else:
 				data = self.factory.aes.decrypt(data)
 
-		self.factory.tun.tun.write(data)
+		try: # because this doesn't always work when encryption is on
+			self.factory.tun.tun.write(data)
+		except:
+			pass
 	
 
 	def tunnel_write(self, data):
@@ -101,7 +105,6 @@ class WSClientFactory(WebSocketClientFactory):
 			self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
 		except socket.error, errmsg:
 			print "Could not create raw socket: " + str(errmsg[0]) + ': ' + errmsg[1]
-			reactor.stop()
 
 
 	def tunnel_write(self, data):
@@ -110,7 +113,6 @@ class WSClientFactory(WebSocketClientFactory):
 			self.proto.tunnel_write(data)
 		except:
 			log.msg("Couldn't reach the server over the WebSocket.  Is it running?  Firewalled?", logLevel=logging.WARN)
-			reactor.stop()
 
 
 class WSClientProto(WebSocketClientProtocol):
@@ -133,7 +135,10 @@ class WSClientProto(WebSocketClientProtocol):
 		if self.factory.encrypt == 1:
 			data = self.factory.aes.decrypt(data)
 
-		self.factory.tun.tun.write(data)
+		try:
+			self.factory.tun.tun.write(data)
+		except:
+			pass
 
 
 	def tunnel_write(self, data):
