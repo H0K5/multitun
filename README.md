@@ -32,6 +32,7 @@ Installation
 * You will need to pip (pip2, pip2.7) install the following packages:
 	python-pytun, iniparse, twisted, autobahn, dpkt-fix, pycrypto
 
+* Tested in Fedora/CentOS, Arch, Ubuntu
 
 Usage
 =====
@@ -108,6 +109,14 @@ Examples
     ip route add [server ext. ip] via [client gw ip] dev [client dev] proto static  
     ip route del default  
     ip route add default via [client multitun local ip] dev [client tun] proto static  
+
+
+Todo
+====
+
+* Accept more than one client simultaneously, with different passphrases (keys?)
+
+* Explore support for MacOS and Windows (at least as clients)
 
 
 Bugs
