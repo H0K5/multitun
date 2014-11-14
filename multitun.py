@@ -1,6 +1,6 @@
 #!/usr/bin/env python2
 
-# multitun v0.4
+# multitun v0.5
 #
 # Joshua Davis (multitun -*- covert.codes)
 # http://covert.codes

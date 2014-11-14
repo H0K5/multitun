@@ -58,21 +58,24 @@ Configuration
 
 * Configuration is straightforward.  Here is an example multitun.conf:
 
-	[all]  
-	serv_addr = 192.168.1.22  
-	serv_port = 80  
-	tun_nm = 255.255.255.0  
-	tun_mtu = 1500  
-	encrypt = 1  
-	key = akey  
+	[all]
+	serv_addr = host
+	serv_port = 80
+	ws_loc = mt
+	tun_nm = 255.255.255.0
+	tun_mtu = 1500
+	log_file = /var/log/multitun
+	encrypt = 1
+	passphrase = secret
 
-	[server]  
-	tun_dev = tun0  
-	tun_addr = 10.10.0.1  
+	[server]
+	tun_dev = tun1
+	tun_addr = 10.10.0.1
+	webdir = ./html
 
-	[client]  
-	tun_dev = tun0  
-	tun_addr = 10.10.0.2  
+	[client]
+	tun_dev = tun0
+	tun_addr = 10.10.0.2
 
 
 Examples
