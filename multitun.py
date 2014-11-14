@@ -15,11 +15,15 @@ import dpkt
 from iniparse import INIConfig
 from pytun import TunTapDevice, IFF_TUN, IFF_NO_PI
 from twisted.internet import protocol, reactor
+from twisted.web.server import Site
+from twisted.web.static import File
 from twisted.python import log
 from autobahn.twisted.websocket import WebSocketServerFactory
 from autobahn.twisted.websocket import WebSocketServerProtocol
 from autobahn.twisted.websocket import WebSocketClientFactory
 from autobahn.twisted.websocket import WebSocketClientProtocol
+from autobahn.twisted.resource import WebSocketResource
+
 from Crypto.Cipher import AES
 from Crypto.Hash import SHA224
 from Crypto import Random
@@ -196,26 +200,32 @@ class TUNReader(object):
 class Server(object):
 	"""multitun server object"""
 
-	def __init__(self, listen_addr, listen_port, tun_dev, tun_addr, tun_client_addr, tun_nm, tun_mtu, encrypt, key):
-		self.listen_addr = listen_addr
-		self.listen_port = listen_port
+	def __init__(self, serv_addr, serv_port, ws_loc, tun_dev, tun_addr, tun_client_addr, tun_nm, tun_mtu, webdir, encrypt, key):
+		self.serv_addr = serv_addr
+		self.serv_port = serv_port
+		self.ws_loc = ws_loc
 		self.tun_dev = tun_dev
 		self.tun_addr = tun_addr
 		self.tun_client_addr =  tun_client_addr
 		self.tun_nm = tun_nm
 		self.tun_mtu = tun_mtu
+		self.webdir = webdir
 		self.encrypt = encrypt
 		self.key = key
 
 		# WebSocket
-		path = "ws://"+listen_addr+":"+listen_port
+		path = "ws://"+self.serv_addr+":"+self.serv_port
 		self.wsfactory = WSServerFactory(path, debug=False)
 		self.wsfactory.protocol = WSServerProto
 		self.wsfactory.encrypt = self.encrypt
 		self.wsfactory.key = self.key
 		self.wsfactory.iv = 0
 
-		reactor.listenTCP(int(listen_port), self.wsfactory)
+		# Web server
+		ws_resource = WebSocketResource(self.wsfactory)
+		root = File(self.webdir)
+		root.putChild(self.ws_loc, ws_resource)
+		site = Site(root)
 
 		# TUN device
 		self.server_tun = TUNReader(self.tun_dev, self.tun_addr, self.tun_client_addr, self.tun_nm, self.tun_mtu, self.wsfactory)
@@ -223,15 +233,17 @@ class Server(object):
 
 		self.wsfactory.tun = self.server_tun
 
+		reactor.listenTCP(int(serv_port), site)
 		reactor.run()
 
 
 class Client(object):
 	"""multitun client object"""
 
-	def __init__(self, serv_addr, serv_port, tun_dev, tun_addr, tun_serv_addr, tun_nm, tun_mtu, encrypt, key):
+	def __init__(self, serv_addr, serv_port, ws_loc, tun_dev, tun_addr, tun_serv_addr, tun_nm, tun_mtu, encrypt, key):
 		self.serv_addr = serv_addr
 		self.serv_port = serv_port
+		self.ws_loc = ws_loc
 		self.tun_dev = tun_dev
 		self.tun_addr = tun_addr
 		self.tun_serv_addr = tun_serv_addr
@@ -241,7 +253,7 @@ class Client(object):
 		self.key = key
 
 		# WebSocket
-		path = "ws://"+serv_addr+":"+serv_port
+		path = "ws://"+self.serv_addr+":"+self.serv_port+"/"+self.ws_loc
 		self.wsfactory = WSClientFactory(path, debug=False)
 		self.wsfactory.protocol = WSClientProto
 		self.wsfactory.encrypt = self.encrypt
@@ -285,6 +297,7 @@ def main():
 	log_file = config.all.log_file
 	serv_addr = config.all.serv_addr
 	serv_port = config.all.serv_port
+	ws_loc = config.all.ws_loc
 	tun_nm = config.all.tun_nm
 	tun_mtu = config.all.tun_mtu
 	encrypt = int(config.all.encrypt)
@@ -306,12 +319,13 @@ def main():
 		tun_dev = config.server.tun_dev
 		tun_addr = config.server.tun_addr
 		tun_client_addr = config.client.tun_addr
+		webdir = config.server.webdir
 
 		log.msg("Starting multitun as a server", logLevel=logging.INFO)
 		logstr = ("Server listening on port %s") % (serv_port)
 		log.msg(logstr, logLevel=logging.INFO)
 
-		server = Server(serv_addr, serv_port, tun_dev, tun_addr, tun_client_addr, tun_nm, tun_mtu, encrypt, key)
+		server = Server(serv_addr, serv_port, ws_loc, tun_dev, tun_addr, tun_client_addr, tun_nm, tun_mtu, webdir, encrypt, key)
 
 	else: # server != True
 		serv_addr = config.all.serv_addr
@@ -324,7 +338,7 @@ def main():
 		logstr = ("Forwarding to %s:%s") % (serv_addr, int(serv_port))
 		log.msg(logstr, logLevel=logging.INFO)
 
-		client = Client(serv_addr, serv_port, tun_dev, tun_addr, tun_serv_addr, tun_nm, tun_mtu, encrypt, key)
+		client = Client(serv_addr, serv_port, ws_loc, tun_dev, tun_addr, tun_serv_addr, tun_nm, tun_mtu, encrypt, key)
 
 if __name__ == "__main__":
 	main()

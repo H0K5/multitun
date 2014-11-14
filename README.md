@@ -21,6 +21,8 @@ enabled, only users with the key can use the tunnel.  Multitun may be used
 in conjunction with common tools to enable port forwarding and masquerading
 (see Examples below.)
 
+Multitun allows a simple web server to run at the same time the WebSocket is
+waiting for / communicating with clients.
 
 Installation
 ============
@@ -48,6 +50,8 @@ Usage
 * Make sure on the server side that the listen port is allowed through
   the host and network firewalls
 
+* Adjust the webdir parameter in multitun.conf to specify the directory
+  containing HTML to serve browsers who access the server without WS.
 
 Configuration
 =============
