@@ -121,10 +121,7 @@ Examples
 Todo
 ====
 
-* Accept more than one client simultaneously, with different passphrases (keys?)
-
 * Explore support for MacOS and Windows (at least as clients)
-
 
 Bugs
 ====
