@@ -1,4 +1,4 @@
-Multitun v0.4 -- 'Tunnel all the things!'
+Multitun v0.5 -- 'Tunnel all the things!'
 
 Joshua Davis (multitun -*- covert.codes)  
 http://covert.codes  

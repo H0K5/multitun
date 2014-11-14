@@ -30,7 +30,7 @@ from Crypto import Random
 
 configfile = "multitun.conf"
 
-MT_VERSION= "v0.4"
+MT_VERSION= "v0.5"
 KEYLEN = 16 # bytes
 EXIT_ERR = -1
 
