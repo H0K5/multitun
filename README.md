@@ -1,14 +1,15 @@
 Multitun v0.5 -- 'Tunnel all the things!'
 
-Joshua Davis (multitun -*- covert.codes)  
+Joshua Davis (multitun -!- covert.codes)  
 http://covert.codes  
 Copyright(C) 2014, Joshua Davis  
 Released under the GNU General Public License  
 
+
 Introduction
 ============
 
- Efficiently and securely tunnel everything over a harmless looking WebSocket!
+Efficiently and securely tunnel everything over a harmless looking WebSocket!
 
 Multitun tunnels IPv4 over a WebSocket (RFC 6455), allowing bulk tunneling
 through one connection on, for example, port 80.  One use for this is to
@@ -16,13 +17,15 @@ bypass firewalls by having a multitun server listening on a host outside
 the firewall, and using a multitun client on the host behind the firewall.
 Firewalls that allow web and HTML5 are assumed to allow WebSockets as well.
 
-Multitun allows for encryption with a shared key.  When encryption is
-enabled, only users with the key can use the tunnel.  Multitun may be used
-in conjunction with common tools to enable port forwarding and masquerading
-(see Examples below.)
+Multitun support encryption with a password.  Only users with the correct
+password can use the tunnel.  Multitun may be used in conjunction with other
+common tools to enable port forwarding and masquerading (see the Examples
+section below), and thus route arbitrary or all client traffic securely
+through the Multitun server.
 
-Multitun allows a simple web server to run at the same time the WebSocket is
-waiting for / communicating with clients.
+Multitun provides a simple web server to serve HTML to connecting clients that
+don't know about or aren't using the WebSocket tunnel.
+
 
 Installation
 ============
@@ -35,6 +38,7 @@ Installation
 	python-pytun, iniparse, twisted, autobahn, dpkt-fix, pycrypto
 
 * Tested in Fedora/CentOS, Arch, Ubuntu
+
 
 Usage
 =====
@@ -53,24 +57,34 @@ Usage
 * Adjust the webdir parameter in multitun.conf to specify the directory
   containing HTML to serve browsers who access the server without WS.
 
+* Works with one client at a time (new authorized clients will bump off
+  the existing client)
+
+
 Configuration
 =============
 
 * Configuration is straightforward.  Here is an example multitun.conf:
 
-	[all]  
-	serv_addr = host  
+[all]
+	# Server IP address and port  
+	serv_addr = 192.168.2.1  
 	serv_port = 80  
+
+	# WebSocket path  
 	ws_loc = mt  
+
+	# Tunnel interface netmask and MTU (leave them alone)  
 	tun_nm = 255.255.255.0  
 	tun_mtu = 1500  
+
 	log_file = /var/log/multitun  
-	encrypt = 1  
-	passphrase = secret  
+	password = secret  
 
 	[server]  
 	tun_dev = tun1  
 	tun_addr = 10.10.0.1  
+	# Where static HTML pages are to serve non-WS clients  
 	webdir = ./html  
 
 	[client]  
@@ -118,13 +132,8 @@ Examples
     ip route add default via [client multitun local ip] dev [client tun] proto static  
 
 
-Todo
-====
-
-* Explore support for MacOS and Windows (at least as clients)
-
 Bugs
 ====
 
-* Please report bugs to me (multitun -*- covert.codes)
+* Please report bugs to me (multitun -!- covert.codes)
 

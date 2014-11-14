@@ -33,6 +33,7 @@ configfile = "multitun.conf"
 MT_VERSION= "v0.5"
 KEYLEN = 16 # bytes
 EXIT_ERR = -1
+PW_LEN = 10
 
 
 class WSServerFactory(WebSocketServerFactory):
@@ -65,8 +66,9 @@ class WSServerProto(WebSocketServerProtocol):
 
 
 	def onOpen(self):
-		self.factory.proto = self
 		log.msg("WebSocket opened", logLevel=logging.INFO)
+		self.iv = 0
+		self.key = self.factory.key
 
 
 	def onClose(self, wasClean, code, reason):
@@ -75,16 +77,27 @@ class WSServerProto(WebSocketServerProtocol):
 
 	def onMessage(self, data, isBinary):
 		"""Get data from the server WebSocket, send to the TUN"""
-		if self.factory.encrypt == 1:
-			if self.factory.iv == 0:
-				self.factory.iv = data[:AES.block_size]
-				self.factory.aes_e = AES.new(self.factory.key, AES.MODE_CFB, self.factory.iv)
-				self.factory.aes_d = AES.new(self.factory.key, AES.MODE_CFB, self.factory.iv)
+		if self.iv == 0:
+			# First authenticate
+			tmp_iv = data[:AES.block_size]
+			tmp_aes_d = AES.new(self.key, AES.MODE_CFB, tmp_iv)
+			tmp_data = tmp_aes_d.decrypt(data[AES.block_size:])
 
-				data = data[AES.block_size:]
-				data = self.factory.aes_d.decrypt(data)
+			if tmp_data[:len(self.key)].ljust(PW_LEN,'0') != self.key.ljust(PW_LEN, '0'):
+				log.msg("Remote unauthorized", logLevel=logging.INFO)
+				self.sendClose()
+
+				return
+
 			else:
-				data = self.factory.aes_d.decrypt(data)
+				log.msg("Remote authorized", logLevel=logging.INFO)
+				self.factory.proto = self
+				self.iv = tmp_iv
+				self.aes_e = AES.new(self.key, AES.MODE_CFB, self.iv)
+				self.aes_d = tmp_aes_d
+				data = tmp_data[len(self.key):]
+		else:
+			data = self.aes_d.decrypt(data)
 
 		try:
 			self.factory.tun.tun.write(data)
@@ -94,9 +107,7 @@ class WSServerProto(WebSocketServerProtocol):
 
 	def tunnel_write(self, data):
 		"""Server: TUN sends data through WebSocket to client"""
-		if self.factory.encrypt == 1:
-			data = self.factory.aes_e.encrypt(data)
-
+		data = self.aes_e.encrypt(data)
 		self.sendMessage(data, isBinary=True)
 
 
@@ -116,7 +127,7 @@ class WSClientFactory(WebSocketClientFactory):
 		try:
 			self.proto.tunnel_write(data)
 		except:
-			log.msg("Couldn't reach the server over the WebSocket.  Is it running?  Firewalled?", logLevel=logging.WARN)
+			log.msg("Couldn't reach the server over the WebSocket", logLevel=logging.WARN)
 
 
 class WSClientProto(WebSocketClientProtocol):
@@ -128,6 +139,13 @@ class WSClientProto(WebSocketClientProtocol):
 
 	def onOpen(self):
 		self.factory.proto = self
+
+		iv = Random.new().read(AES.block_size)
+		self.set_iv = iv
+		self.key = self.factory.key
+		self.aes_e = AES.new(self.key, AES.MODE_CFB, iv)
+		self.aes_d = AES.new(self.key, AES.MODE_CFB, iv)
+
 		log.msg("WebSocket opened", logLevel=logging.INFO)
 	
 
@@ -136,8 +154,7 @@ class WSClientProto(WebSocketClientProtocol):
 	
 
 	def onMessage(self, data, isBinary):
-		if self.factory.encrypt == 1:
-			data = self.factory.aes_d.decrypt(data)
+		data = self.aes_d.decrypt(data)
 
 		try:
 			self.factory.tun.tun.write(data)
@@ -147,27 +164,23 @@ class WSClientProto(WebSocketClientProtocol):
 
 	def tunnel_write(self, data):
 		"""Client: TUN sends data through WebSocket to server"""
-		if self.factory.encrypt == 1:
-			if self.factory.set_iv != 0:
-				data = self.factory.set_iv + self.factory.aes_e.encrypt(data)
-				self.factory.set_iv = 0
-			else:
-				data = self.factory.aes_e.encrypt(data)
+		if self.set_iv != 0:
+			# Send authentication and IV with the first packet
+			data = self.set_iv + self.aes_e.encrypt(self.key + data)
+			self.set_iv = 0
+		else:
+			data = self.aes_e.encrypt(data)
 
 		self.sendMessage(data, isBinary=True)
 
 
 class TUNReader(object):
 	"""TUN device"""
+
 	def __init__(self, tun_dev, tun_addr, tun_remote_addr, tun_nm, tun_mtu, wsfactory):
-		self.tun_dev = tun_dev
-		self.tun_addr = tun_addr
-		self.tun_remote_addr = tun_remote_addr
-		self.tun_nm = tun_nm
-		self.tun_mtu = tun_mtu
 		self.wsfactory = wsfactory
 
-		self.tun = TunTapDevice(name=self.tun_dev, flags=(IFF_TUN|IFF_NO_PI))
+		self.tun = TunTapDevice(name=tun_dev, flags=(IFF_TUN|IFF_NO_PI))
 		self.tun.addr = tun_addr
 		self.tun.dstaddr = tun_remote_addr
 		self.tun.netmask = tun_nm
@@ -200,38 +213,23 @@ class TUNReader(object):
 class Server(object):
 	"""multitun server object"""
 
-	def __init__(self, serv_addr, serv_port, ws_loc, tun_dev, tun_addr, tun_client_addr, tun_nm, tun_mtu, webdir, encrypt, key):
-		self.serv_addr = serv_addr
-		self.serv_port = serv_port
-		self.ws_loc = ws_loc
-		self.tun_dev = tun_dev
-		self.tun_addr = tun_addr
-		self.tun_client_addr =  tun_client_addr
-		self.tun_nm = tun_nm
-		self.tun_mtu = tun_mtu
-		self.webdir = webdir
-		self.encrypt = encrypt
-		self.key = key
-
+	def __init__(self, serv_addr, serv_port, ws_loc, tun_dev, tun_addr, tun_client_addr, tun_nm, tun_mtu, webdir, key):
 		# WebSocket
-		path = "ws://"+self.serv_addr+":"+self.serv_port
-		self.wsfactory = WSServerFactory(path, debug=False)
-		self.wsfactory.protocol = WSServerProto
-		self.wsfactory.encrypt = self.encrypt
-		self.wsfactory.key = self.key
-		self.wsfactory.iv = 0
+		path = "ws://"+serv_addr+":"+serv_port
+		wsfactory = WSServerFactory(path, debug=False)
+		wsfactory.protocol = WSServerProto
+		wsfactory.key = key
 
 		# Web server
-		ws_resource = WebSocketResource(self.wsfactory)
-		root = File(self.webdir)
-		root.putChild(self.ws_loc, ws_resource)
+		ws_resource = WebSocketResource(wsfactory)
+		root = File(webdir)
+		root.putChild(ws_loc, ws_resource)
 		site = Site(root)
 
 		# TUN device
-		self.server_tun = TUNReader(self.tun_dev, self.tun_addr, self.tun_client_addr, self.tun_nm, self.tun_mtu, self.wsfactory)
-		reactor.addReader(self.server_tun)
-
-		self.wsfactory.tun = self.server_tun
+		server_tun = TUNReader(tun_dev, tun_addr, tun_client_addr, tun_nm, tun_mtu, wsfactory)
+		reactor.addReader(server_tun)
+		wsfactory.tun = server_tun
 
 		reactor.listenTCP(int(serv_port), site)
 		reactor.run()
@@ -240,43 +238,23 @@ class Server(object):
 class Client(object):
 	"""multitun client object"""
 
-	def __init__(self, serv_addr, serv_port, ws_loc, tun_dev, tun_addr, tun_serv_addr, tun_nm, tun_mtu, encrypt, key):
-		self.serv_addr = serv_addr
-		self.serv_port = serv_port
-		self.ws_loc = ws_loc
-		self.tun_dev = tun_dev
-		self.tun_addr = tun_addr
-		self.tun_serv_addr = tun_serv_addr
-		self.tun_nm = tun_nm
-		self.tun_mtu = tun_mtu
-		self.encrypt = encrypt
-		self.key = key
-
+	def __init__(self, serv_addr, serv_port, ws_loc, tun_dev, tun_addr, tun_serv_addr, tun_nm, tun_mtu, key):
 		# WebSocket
-		path = "ws://"+self.serv_addr+":"+self.serv_port+"/"+self.ws_loc
-		self.wsfactory = WSClientFactory(path, debug=False)
-		self.wsfactory.protocol = WSClientProto
-		self.wsfactory.encrypt = self.encrypt
-
-		if(self.encrypt == 1):
-			iv = Random.new().read(AES.block_size)
-			self.wsfactory.set_iv = iv
-			self.wsfactory.aes_e = AES.new(self.key, AES.MODE_CFB, iv)
-			self.wsfactory.aes_d = AES.new(self.key, AES.MODE_CFB, iv)
-
-		reactor.connectTCP(self.serv_addr, int(self.serv_port), self.wsfactory)
+		path = "ws://"+serv_addr+":"+serv_port+"/"+ws_loc
+		wsfactory = WSClientFactory(path, debug=False)
+		wsfactory.protocol = WSClientProto
+		wsfactory.key = key
 
 		# TUN device
-		self.client_tun = TUNReader(self.tun_dev, self.tun_addr, self.tun_serv_addr, self.tun_nm, self.tun_mtu, self.wsfactory)
-		reactor.addReader(self.client_tun)
+		client_tun = TUNReader(tun_dev, tun_addr, tun_serv_addr, tun_nm, tun_mtu, wsfactory)
+		reactor.addReader(client_tun)
+		wsfactory.tun = client_tun
 
-		self.wsfactory.tun = self.client_tun
-
+		reactor.connectTCP(serv_addr, int(serv_port), wsfactory)
 		reactor.run()
 
 
 def main():
-	global verbosity
 	server = False
 
 	for arg in sys.argv:
@@ -300,20 +278,18 @@ def main():
 	ws_loc = config.all.ws_loc
 	tun_nm = config.all.tun_nm
 	tun_mtu = config.all.tun_mtu
-	encrypt = int(config.all.encrypt)
-	passphrase = config.all.passphrase
+	password = config.all.password
 
 	log.startLogging(sys.stdout)
 	log.startLogging(open(log_file, 'w+'))
 
 
-	key = ''
-	if encrypt == 1:
-		if len(passphrase) == 0:
-			log.msg("Edit the configuration file to include a key (a ten character password will do for many applications.", logLevel=logging.WARN)
-			sys.exit(EXIT_ERR)
+	if len(password) == 0:
+		log.msg("Edit the configuration file to include a password", logLevel=logging.WARN)
+		sys.exit(EXIT_ERR)
 
-		key = SHA224.new(data=passphrase).digest()[:KEYLEN]
+	password = password.ljust(PW_LEN, '0')
+	key = SHA224.new(data=password).digest()[:KEYLEN]
 
 	if server == True:
 		tun_dev = config.server.tun_dev
@@ -325,7 +301,7 @@ def main():
 		logstr = ("Server listening on port %s") % (serv_port)
 		log.msg(logstr, logLevel=logging.INFO)
 
-		server = Server(serv_addr, serv_port, ws_loc, tun_dev, tun_addr, tun_client_addr, tun_nm, tun_mtu, webdir, encrypt, key)
+		server = Server(serv_addr, serv_port, ws_loc, tun_dev, tun_addr, tun_client_addr, tun_nm, tun_mtu, webdir, key)
 
 	else: # server != True
 		serv_addr = config.all.serv_addr
@@ -338,9 +314,8 @@ def main():
 		logstr = ("Forwarding to %s:%s") % (serv_addr, int(serv_port))
 		log.msg(logstr, logLevel=logging.INFO)
 
-		client = Client(serv_addr, serv_port, ws_loc, tun_dev, tun_addr, tun_serv_addr, tun_nm, tun_mtu, encrypt, key)
+		client = Client(serv_addr, serv_port, ws_loc, tun_dev, tun_addr, tun_serv_addr, tun_nm, tun_mtu, key)
 
 if __name__ == "__main__":
 	main()
-
 
