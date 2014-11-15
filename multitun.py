@@ -23,7 +23,6 @@ from autobahn.twisted.websocket import WebSocketServerProtocol
 from autobahn.twisted.websocket import WebSocketClientFactory
 from autobahn.twisted.websocket import WebSocketClientProtocol
 from autobahn.twisted.resource import WebSocketResource
-
 from Crypto.Cipher import AES
 from Crypto.Hash import SHA224
 from Crypto import Random
@@ -33,7 +32,7 @@ configfile = "multitun.conf"
 MT_VERSION= "v0.5"
 KEYLEN = 16 # bytes
 EXIT_ERR = -1
-PW_LEN = 10
+PW_LEN = 15
 
 
 class WSServerFactory(WebSocketServerFactory):
@@ -261,6 +260,7 @@ def main():
 		if arg == "-s":
 			server = True
 
+	print ""
 	print " =============================================="
 	print " Multitun " + MT_VERSION
 	print " By Joshua Davis (multitun -*- covert.codes)"
@@ -287,6 +287,9 @@ def main():
 	if len(password) == 0:
 		log.msg("Edit the configuration file to include a password", logLevel=logging.WARN)
 		sys.exit(EXIT_ERR)
+	
+	if len(password) > PW_LEN:
+		password = password[:PW_LEN]
 
 	password = password.ljust(PW_LEN, '0')
 	key = SHA224.new(data=password).digest()[:KEYLEN]

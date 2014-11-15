@@ -17,7 +17,7 @@ bypass firewalls by having a multitun server listening on a host outside
 the firewall, and using a multitun client on the host behind the firewall.
 Firewalls that allow web and HTML5 are assumed to allow WebSockets as well.
 
-Multitun support encryption with a password.  Only users with the correct
+Multitun uses encryption with a password.  Only users with the correct
 password can use the tunnel.  Multitun may be used in conjunction with other
 common tools to enable port forwarding and masquerading (see the Examples
 section below), and thus route arbitrary or all client traffic securely
@@ -66,7 +66,7 @@ Configuration
 
 * Configuration is straightforward.  Here is an example multitun.conf:
 
-[all]
+	[all]  
 	# Server IP address and port  
 	serv_addr = 192.168.2.1  
 	serv_port = 80  
