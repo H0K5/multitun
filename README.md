@@ -67,24 +67,17 @@ Configuration
 * Configuration is straightforward.  Here is an example multitun.conf:
 
 	[all]  
-	# Server IP address and port  
 	serv_addr = 192.168.2.1  
 	serv_port = 80  
-
-	# WebSocket path  
 	ws_loc = mt  
-
-	# Tunnel interface netmask and MTU (leave them alone)  
 	tun_nm = 255.255.255.0  
 	tun_mtu = 1500  
-
 	log_file = /var/log/multitun  
 	password = secret  
 
 	[server]  
 	tun_dev = tun1  
 	tun_addr = 10.10.0.1  
-	# Where static HTML pages are to serve non-WS clients  
 	webdir = ./html  
 
 	[client]  
