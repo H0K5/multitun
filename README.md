@@ -1,4 +1,11 @@
-Multitun v0.5 -- 'Tunnel all the things!'
+
+                 | | | (_) |              
+  _ __ ___  _   _| | |_ _| |_ _   _ _ __  
+ | '_ ` _ \| | | | | __| | __| | | | '_ \ 
+ | | | | | | |_| | | |_| | |_| |_| | | | |
+ |_| |_| |_|\__,_|_|\__|_|\__|\__,_|_| |_|
+
+multitun v0.6 -- 'Tunnel all the things!'
 
 Joshua Davis (multitun -!- covert.codes)  
 http://covert.codes  
@@ -9,7 +16,7 @@ Released under the GNU General Public License
 Introduction
 ============
 
-Efficiently and securely tunnel everything over a harmless looking WebSocket!
+Tunnel everything over a harmless looking WebSocket!
 
 Multitun tunnels IPv4 over a WebSocket (RFC 6455), allowing bulk tunneling
 through one connection on, for example, port 80.  One use for this is to
@@ -20,8 +27,8 @@ Firewalls that allow web and HTML5 are assumed to allow WebSockets as well.
 Multitun uses encryption with a password.  Only users with the correct
 password can use the tunnel.  Multitun may be used in conjunction with other
 common tools to enable port forwarding and masquerading (see the Examples
-section below), and thus route arbitrary or all client traffic securely
-through the Multitun server.
+section below), and thus route arbitrary or all client traffic through
+the Multitun server.
 
 Multitun provides a simple web server to serve HTML to connecting clients that
 don't know about or aren't using the WebSocket tunnel.
@@ -32,9 +39,12 @@ Installation
 
 * Designed under Linux, with Python 2.7.
 
-* You will need to install python-devel (aka python-dev) and pip for python 2.7
+* You will need to install python-devel (aka python-dev), pip for python 2.7,
+	and setuptools
 
-* You will need to pip (pip2, pip2.7) install the following packages:
+* As root: setup.py install
+
+* If you install packages manually, it depends on these:
 	python-pytun, iniparse, twisted, autobahn, dpkt-fix, pycrypto
 
 * Tested in Fedora/CentOS, Arch, Ubuntu
@@ -60,29 +70,39 @@ Usage
 * Works with one client at a time (new authorized clients will bump off
   the existing client)
 
+* If you want serious cryptographic security, use reputable crypto
+  in the apps using the tunnel (e.g. ssh, ssh tunneling below multitun.)
+
 
 Configuration
 =============
 
 * Configuration is straightforward.  Here is an example multitun.conf:
 
-	[all]  
-	serv_addr = 192.168.2.1  
-	serv_port = 80  
-	ws_loc = mt  
-	tun_nm = 255.255.255.0  
-	tun_mtu = 1500  
-	log_file = /var/log/multitun  
-	password = secret  
+	[all]
+	serv_addr = 192.168.2.1
+	serv_port = 80
+	# WebSocket path
+	ws_loc = mt
 
-	[server]  
-	tun_dev = tun1  
-	tun_addr = 10.10.0.1  
-	webdir = ./html  
+	# Tunnel interface netmask and MTU (leave them alone)
+	tun_nm = 255.255.255.0
+	tun_mtu = 1500
 
-	[client]  
-	tun_dev = tun0  
-	tun_addr = 10.10.0.2  
+	# Log to file as well as console?
+	logfile = /var/log/multitun
+
+	password = secret
+
+	[server]
+	tun_dev = tun1
+	tun_addr = 10.10.0.1
+	# Where static HTML pages are to serve non-WS clients
+	webdir = ./html
+
+	[client]
+	tun_dev = tun0
+	tun_addr = 10.10.0.2
 
 
 Examples
@@ -96,7 +116,7 @@ Examples
 
 * Use Linux as a NAT gateway for your host behind the firewall:
 
-   *Configure the server*
+  *Configure the server*
 
    * Include the following in your multitun server iptables configuration.
      In this config, eth0 is the server external interface, tun1 is the
@@ -116,9 +136,9 @@ Examples
 
    echo 1 > /proc/sys/net/ipv4/ip_forward
 
-   *Configure the client*
+  *Configure the client*
    
-   * Take care of routing:
+  * Take care of routing:
 	
     ip route add [server ext. ip] via [client gw ip] dev [client dev] proto static  
     ip route del default  
@@ -129,4 +149,22 @@ Bugs
 ====
 
 * Please report bugs to me (multitun -!- covert.codes)
+
+
+TODO
+====
+
+1) Consider using different keys in each direction (HKDF)  
+
+2) Have someone review the crypto  
+
+3) Accept multiple simultaneous users with seperate credentials  
+
+
+Acknowledgments
+===============
+
+* Thanks to @ryancdotorg for crypto advice  
+
+* Crypto guidance taken from: https://leanpub.com/pycrypto/read
 
