@@ -44,10 +44,10 @@ Installation
 
 * As root: setup.py install
 
-* If you install packages manually, it depends on these:
+* If you want to install packages manually, it depends on these:
 	python-pytun, iniparse, twisted, autobahn, dpkt-fix, pycrypto
 
-* Tested in Fedora/CentOS, Arch, Ubuntu
+* Tested in Fedora/CentOS, Arch, Ubuntu, BlackArch, Kali
 
 
 Usage
@@ -152,6 +152,8 @@ TODO
 2) Have someone review the crypto  
 
 3) Accept multiple simultaneous users with seperate credentials  
+
+4) Add support for MacOS and Windows?
 
 
 Acknowledgments
