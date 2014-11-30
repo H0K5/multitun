@@ -79,23 +79,23 @@ Configuration
 
 * Configuration is straightforward.  Here is an example multitun.conf:
 
-	[all]
-	serv_addr = 192.168.2.1
-	serv_port = 80
-	ws_loc = mt
-	tun_nm = 255.255.255.0
-	tun_mtu = 1500
-	logfile = /var/log/multitun
-	password = secret
+	[all]  
+	serv_addr = 192.168.2.1  
+	serv_port = 80  
+	ws_loc = mt  
+	tun_nm = 255.255.255.0  
+	tun_mtu = 1500  
+	logfile = /var/log/multitun  
+	password = secret  
 
-	[server]
-	tun_dev = tun1
-	tun_addr = 10.10.0.1
-	webdir = ./html
+	[server]  
+	tun_dev = tun1  
+	tun_addr = 10.10.0.1  
+	webdir = ./html  
 
-	[client]
-	tun_dev = tun0
-	tun_addr = 10.10.0.2
+	[client]  
+	tun_dev = tun0  
+	tun_addr = 10.10.0.2  
 
 
 Examples
