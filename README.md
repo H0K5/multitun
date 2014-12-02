@@ -1,11 +1,12 @@
+
                      | | | (_) |              
       _ __ ___  _   _| | |_ _| |_ _   _ _ __  
      | '_ ` _ \| | | | | __| | __| | | | '_ \ 
      | | | | | | |_| | | |_| | |_| |_| | | | |
-     |_| |_| |_|\__,_|_|\__|_|\__|\__,_|_| |_|
+     |_| |_| |_|\____|_|\__|_|\__|\____|_| |_|
 
 
-multitun v0.6 -- 'Tunnel all the things!'
+multitun v0.7 -- 'Tunnel all the things!'
 
 Joshua Davis (multitun -!- covert.codes)  
 http://covert.codes  
@@ -22,13 +23,16 @@ Multitun tunnels IPv4 over a WebSocket (RFC 6455), allowing bulk tunneling
 through one connection on, for example, port 80.  One use for this is to
 bypass firewalls by having a multitun server listening on a host outside
 the firewall, and using a multitun client on the host behind the firewall.
-Firewalls that allow web and HTML5 are assumed to allow WebSockets as well.
+Firewalls that allow web and HTML5 are assumed to allow WebSockets as well,
+and in theory multitun traffic quietly slips past systems that do things like
+deep-packet inspection to find conventional tunnels (e.g. ssh tunnel over
+port 80).
 
-Multitun uses encryption with a password.  Only users with the correct
-password can use the tunnel.  Multitun may be used in conjunction with other
-common tools to enable port forwarding and masquerading (see the Examples
-section below), and thus route arbitrary or all client traffic through
-the Multitun server.
+Only users with valid passwords can use the tunnel.  Multitun may be used
+in conjunction with other common tools to enable port forwarding and
+masquerading (see the Examples section below), and thus route arbitrary or
+all client traffic through the Multitun server.  Multiple multitun clients
+can access the same multitun server at the same time.
 
 Multitun provides a simple web server to serve HTML to connecting clients that
 don't know about or aren't using the WebSocket tunnel.
@@ -44,8 +48,7 @@ Installation
 
 * As root: setup.py install
 
-* If you want to install packages manually, it depends on these:
-	python-pytun, iniparse, twisted, autobahn, dpkt-fix, pycrypto
+* Change the configuration file permissions to keep the password from others
 
 * Tested in Fedora/CentOS, Arch, Ubuntu, BlackArch, Kali
 
@@ -55,11 +58,11 @@ Usage
 
 * Edit the configuration files on both the server and client sides
 
-* Run multitun -s to start the server, run multitun without options
-  to start the client
+* The program must have permission to make a TUN interface (e.g.
+  run as root)
 
-* The program must have permission to use low port numbers, the TUN
-  interface, and raw sockets (e.g. run as root)
+* Run multitun -s to start the server, then run multitun without
+  options to start the client
 
 * Make sure on the server side that the listen port is allowed through
   the host and network firewalls
@@ -67,11 +70,16 @@ Usage
 * Adjust the webdir parameter in multitun.conf to specify the directory
   containing HTML to serve browsers who access the server without WS.
 
-* Works with one client at a time (new authorized clients will bump off
-  the existing client)
+* If connections keep dropping, try running ping in the background for
+  keep-alive
 
-* If you want serious cryptographic security, use reputable crypto
-  in the apps using the tunnel (e.g. ssh, ssh tunneling below multitun.)
+* If you try to connect more than one client with the same TUN IP
+  (as set in the configuration file), only the first one will connect
+
+* Clients can interact on the WebSocket net (ping each other, etc.)
+
+* If you have especially sensitive things to do, use reputable, time-tested
+  crypto beneath multitun (e.g. run an ssh tunnel over multitun).
 
 
 Configuration
@@ -79,23 +87,25 @@ Configuration
 
 * Configuration is straightforward.  Here is an example multitun.conf:
 
-	[all]  
-	serv_addr = 192.168.2.1  
-	serv_port = 80  
-	ws_loc = mt  
-	tun_nm = 255.255.255.0  
-	tun_mtu = 1500  
-	logfile = /var/log/multitun  
-	password = secret  
+    [all]  
+    serv_addr = 192.168.2.1  
+    serv_port = 80  
+    ws_loc = mt  
+    tun_nm = 255.255.255.0  
+    tun_mtu = 1500  
+    logfile = /var/log/multitun  
 
-	[server]  
-	tun_dev = tun1  
-	tun_addr = 10.10.0.1  
-	webdir = ./html  
+    [server]  
+    tun_dev = tun1  
+    tun_addr = 10.10.0.1  
+    p2paddr = 10.10.0.2  
+    webdir = ./html  
+    users = {'10.10.0.2': 'pass1', '10.10.0.3': 'pass2', '10.10.0.4': 'pass3'}  
 
-	[client]  
-	tun_dev = tun0  
-	tun_addr = 10.10.0.2  
+    [client]  
+    tun_dev = tun0  
+    tun_addr = 10.10.0.2  
+    password = pass1  
 
 
 Examples
@@ -142,24 +152,4 @@ Bugs
 ====
 
 * Please report bugs to me (multitun -!- covert.codes)
-
-
-TODO
-====
-
-1) Consider using different keys in each direction (HKDF)  
-
-2) Have someone review the crypto  
-
-3) Accept multiple simultaneous users with seperate credentials  
-
-4) Add support for MacOS and Windows?
-
-
-Acknowledgments
-===============
-
-* Thanks to @ryancdotorg for crypto advice  
-
-* Crypto guidance taken from: https://leanpub.com/pycrypto/read
 

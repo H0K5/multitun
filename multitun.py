@@ -1,6 +1,6 @@
 #!/usr/bin/env python2
 
-# multitun v0.6
+# multitun v0.7
 #
 # Joshua Davis (multitun -*- covert.codes)
 # http://covert.codes
@@ -21,10 +21,10 @@
 
 import dpkt
 import logging
-import socket
 import streql
 import struct
 import sys
+from ast import literal_eval
 from autobahn.twisted.websocket import WebSocketServerFactory
 from autobahn.twisted.websocket import WebSocketServerProtocol
 from autobahn.twisted.websocket import WebSocketClientFactory
@@ -36,19 +36,15 @@ from Crypto.Hash import SHA384
 from Crypto import Random
 from iniparse import INIConfig
 from pytun import TunTapDevice, IFF_TUN, IFF_NO_PI
+from socket import inet_ntoa, inet_aton
 from twisted.internet import protocol, reactor
 from twisted.web.server import Site
 from twisted.web.static import File
 from twisted.python import log
 
-configfile = "multitun.conf"
-
-MT_VERSION= "v0.6"
-EXIT_ERR = -1
-
-AES_KEYLEN = 32
-TAG_KEYLEN = 48
-TAG_LEN = TAG_KEYLEN
+MT_VERSION= "v0.7"
+CONF_FILE = "multitun.conf"
+ERR = -1
 
 
 class WSServerFactory(WebSocketServerFactory):
@@ -57,20 +53,37 @@ class WSServerFactory(WebSocketServerFactory):
     def __init__(self, path, debug, debugCodePaths=False):
         WebSocketServerFactory.__init__(self, path, debug=debug, debugCodePaths=False)
 
-        try:
-            self.sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
-            self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
-        except:
-            log.msg("Could not create raw socket", logLevel=logging.WARN)
-            reactor.stop()
-        
+        # Holds currently connected clients
+        self.clients = dict()
+
 
     def tunnel_write(self, data):
         """Server: receive data from tunnel"""
+        taddr = inet_ntoa(dpkt.ip.IP(data)['dst'])
         try:
-            self.proto.tunnel_write(data)
+            dst_proto = self.clients[taddr]
         except:
-            log.msg("Couldn't reach the client over the WebSocket.", logLevel=logging.WARN)
+            return
+
+        try:
+            dst_proto.tunnel_write(data)
+        except:
+            log.msg("Couldn't reach the client over the WebSocket.", logLevel=logging.INFO)
+
+
+    def register(self, taddr, proto):
+        # return False if desired TUN addr already in use
+        if taddr in self.clients:
+            return False
+
+        self.clients[taddr] = proto
+
+
+    def unregister(self, proto):
+        for c in self.clients:
+            if self.clients[c] == proto:
+                self.clients.pop(c, None)
+                break
 
 
 class WSServerProto(WebSocketServerProtocol):
@@ -81,14 +94,14 @@ class WSServerProto(WebSocketServerProtocol):
 
 
     def onOpen(self):
-        self.factory.proto = self
-        self.mtcrypt = MTCrypt(self.factory.passwd, self.factory.server)
-        self.mtcrypt.proto = self
         log.msg("WebSocket opened", logLevel=logging.INFO)
+        self.mtcrypt = MTCrypt(is_server=True)
+        self.mtcrypt.proto = self
 
 
     def onClose(self, wasClean, code, reason):
-        log.msg("WebSocket closed", logLevel=logging.WARN)
+        self.factory.unregister(self)
+        log.msg("WebSocket closed", logLevel=logging.INFO)
 
 
     def onMessage(self, data, isBinary):
@@ -100,8 +113,12 @@ class WSServerProto(WebSocketServerProtocol):
         try:
             self.factory.tun.tun.write(data)
         except:
-            log.msg("Error writing to TUN", logLevel=logging.WARN)
-        
+            log.msg("Error writing to TUN", logLevel=logging.INFO)
+
+
+    def connectionLost(self, reason):
+        WebSocketServerProtocol.connectionLost(self, reason)
+
 
     def tunnel_write(self, data):
         """Server: TUN sends data through WebSocket to client"""
@@ -112,12 +129,6 @@ class WSServerProto(WebSocketServerProtocol):
 class WSClientFactory(WebSocketClientFactory):
     def __init__(self, path, debug, debugCodePaths=False):
         WebSocketClientFactory.__init__(self, path, debug=debug, debugCodePaths=False)
-        
-        try:
-            self.sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
-            self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
-        except:
-            log.msg("Error creating raw socket", logLevel=logging.WARN)
 
 
     def tunnel_write(self, data):
@@ -125,7 +136,7 @@ class WSClientFactory(WebSocketClientFactory):
         try:
             self.proto.tunnel_write(data)
         except:
-            log.msg("Couldn't reach the server over the WebSocket", logLevel=logging.WARN)
+            log.msg("Couldn't reach the server over the WebSocket", logLevel=logging.INFO)
 
 
 class WSClientProto(WebSocketClientProtocol):
@@ -136,24 +147,26 @@ class WSClientProto(WebSocketClientProtocol):
 
 
     def onOpen(self):
-        self.factory.proto = self
-        self.mtcrypt = MTCrypt(self.factory.passwd, self.factory.server)
-        self.mtcrypt.proto = self
         log.msg("WebSocket opened", logLevel=logging.INFO)
+        self.mtcrypt = MTCrypt(is_server=False)
+        self.factory.proto = self
+        self.mtcrypt.proto = self
         
 
     def onClose(self, wasClean, code, reason):
-        log.msg("WebSocket closed", logLevel=logging.WARN)
+        log.msg("WebSocket closed", logLevel=logging.INFO)
         
 
     def onMessage(self, data, isBinary):
         """Client: Received data from WS, decrypt and send to TUN"""
         data = self.mtcrypt.decrypt(data)
+        if data == None:
+            return
 
         try:
             self.factory.tun.tun.write(data)
         except:
-            log.msg("Error writing to TUN", logLevel=logging.WARN)
+            log.msg("Error writing to TUN", logLevel=logging.INFO)
 
 
     def tunnel_write(self, data):
@@ -168,7 +181,12 @@ class TUNReader(object):
     def __init__(self, tun_dev, tun_addr, tun_remote_addr, tun_nm, tun_mtu, wsfactory):
         self.wsfactory = wsfactory
 
-        self.tun = TunTapDevice(name=tun_dev, flags=(IFF_TUN|IFF_NO_PI))
+        try:
+            self.tun = TunTapDevice(name=tun_dev, flags=(IFF_TUN|IFF_NO_PI))
+        except:
+            log.msg("Couldn't open the TUN device.  Are you root?  Is the interface already in use?", logLevel=logging.WARN)
+            sys.exit(ERR)
+
         self.tun.addr = tun_addr
         self.tun.dstaddr = tun_remote_addr
         self.tun.netmask = tun_nm
@@ -186,7 +204,7 @@ class TUNReader(object):
 
 
     def connectionLost(self, reason):
-        log.msg("Connection lost", logLevel=logging.WARN)
+        log.msg("Connection lost", logLevel=logging.INFO)
 
 
     def doRead(self):
@@ -199,29 +217,29 @@ class TUNReader(object):
         return "TUNReader"
 
 
+AES_KEYLEN = 32
+TAG_LEN = 48
+
 class MTCrypt(object):
     """Handle encryption/decryption for WS traffic"""
 
-    def __init__(self, passwd, is_server):
-        self.passwd = passwd
+    def __init__(self, is_server):
         self.is_server = is_server
-
-        self.iv = Random.new().read(AES.block_size)
-        self.key = SHA384.new(data=passwd).digest()[:AES_KEYLEN]
-
         self.initialized = 0
 
 
     def encrypt(self, data):
-        data = self.pad_data(data)
-
         if self.initialized == 0 and self.is_server == False:
+            taddr = inet_aton(self.proto.factory.tun.tun.addr)
+            self.iv = Random.new().read(AES.block_size)
+            passwd = self.proto.factory.passwd
+            self.key = SHA384.new(data=passwd).digest()[:AES_KEYLEN]
             self.aes_e = AES.new(self.key, AES.MODE_CFB, self.iv)
             self.aes_d = AES.new(self.key, AES.MODE_CFB, self.iv)
 
-            data = self.iv+self.aes_e.encrypt(self.passwd+'\x00'+ data)
+            data = self.iv+self.aes_e.encrypt(data)
             tag = HMAC.new(self.key, msg=data, digestmod=SHA384).digest()[:TAG_LEN]
-            data = data+tag
+            data = taddr+data+tag
 
             self.initialized = 1
 
@@ -239,79 +257,65 @@ class MTCrypt(object):
             return None
        
         if self.initialized == 0 and self.is_server == True:
+            taddr = inet_ntoa(data[:4])
+            data = data[4:]
+            logstr = ("Received request from client with TUN address %s") % (taddr)
+            log.msg(logstr, logLevel=logging.INFO)
+
+            try:
+                passwd = self.proto.factory.users[taddr]
+            except:
+                log.msg("Invalid TUN IP trying to register, ignored", logLevel=logging.INFO)
+                self.proto.sendClose()
+                return None
+
+            # Check if the TUN IP is already being used
+            if(self.proto.factory.register(taddr, self.proto)) == False:
+                log.msg("Duplicate TUN address tried to register, ignored", logLevel=logging.INFO)
+                self.proto.sendClose()
+                return None
+
+            self.key = SHA384.new(data=passwd).digest()[:AES_KEYLEN]
+
             if self.verify_tag(data) == False:
                 log.msg("Invalid HMAC on first packet, remote unauthorized", logLevel=logging.INFO)
                 self.proto.sendClose()
                 return None
 
             self.iv = data[:AES.block_size]
-            data = data[AES.block_size:]
-
+            self.aes_e = AES.new(self.key, AES.MODE_CFB, self.iv)
             self.aes_d = AES.new(self.key, AES.MODE_CFB, self.iv)
-            data = data[:len(data)-TAG_LEN]
-            tmp_data = self.aes_d.decrypt(data)
-            tmp = tmp_data.split('\x00', 1)
 
-            if tmp[0] != self.passwd:
-                log.msg("Remote unauthorized", logLevel=logging.INFO)
-                self.proto.sendClose()
-                return None
+            data = data[AES.block_size:len(data)-TAG_LEN]
+            data = self.aes_d.decrypt(data)
 
-            else:
-                data = tmp[1]
-                log.msg("Remote authorized", logLevel=logging.INFO)
-                self.aes_e = AES.new(self.key, AES.MODE_CFB, self.iv)
-                self.initialized = 1
-        else:
+            log.msg("Remote authorized", logLevel=logging.INFO)
+            self.initialized = 1
+
+        else: # client
             if self.verify_tag(data) == False:
                 log.msg("Invalid HMAC, ignoring data", logLevel=logging.INFO)
                 return None
 
             data = self.aes_d.decrypt(data[:len(data)-TAG_LEN])
 
-        return self.unpad_data(data)
+        return data
 
 
     def verify_tag(self, data):
         pkt_data = data[:len(data)-TAG_LEN]
         pkt_tag = data[len(data)-TAG_LEN:]
         tag = HMAC.new(self.key, msg=pkt_data, digestmod=SHA384).digest()[:TAG_LEN]
-
         return streql.equals(pkt_tag, tag)
 
 
-    def pad_data(self, data):
-        if len(data) % AES.block_size == 0:
-            return data
-
-        padnum = 15 - (len(data) % AES.block_size)
-        data = '%s\x80' % data
-        data = '%s%s' % (data, '\x00' * padnum)
-
-        return data
-
-    
-    def unpad_data(self, data):
-        if not data:
-            return data
-
-        data = data.rstrip('\x00')
-        if data[-1] == '\x80':
-            return data[:-1]
-        else:
-            return data
-
-
 class Server(object):
-    """multitun server object"""
-
-    def __init__(self, serv_addr, serv_port, ws_loc, tun_dev, tun_addr, tun_client_addr, tun_nm, tun_mtu, webdir, passwd):
+    def __init__(self, serv_addr, serv_port, ws_loc, tun_dev, tun_addr, tun_client_addr, tun_nm, tun_mtu, webdir, users):
         # WebSocket
         path = "ws://"+serv_addr+":"+serv_port
         wsfactory = WSServerFactory(path, debug=False)
         wsfactory.protocol = WSServerProto
-        wsfactory.passwd = passwd
-        wsfactory.server = True
+        wsfactory.users = users
 
         # Web server
         ws_resource = WebSocketResource(wsfactory)
@@ -320,50 +324,46 @@ class Server(object):
         site = Site(root)
 
         # TUN device
-        server_tun = TUNReader(tun_dev, tun_addr, tun_client_addr, tun_nm, tun_mtu, wsfactory)
-        reactor.addReader(server_tun)
-        wsfactory.tun = server_tun
+        tun = TUNReader(tun_dev, tun_addr, tun_client_addr, tun_nm, tun_mtu, wsfactory)
+        reactor.addReader(tun)
+        wsfactory.tun = tun
 
         reactor.listenTCP(int(serv_port), site)
         reactor.run()
 
 
 class Client(object):
-    """multitun client object"""
-
     def __init__(self, serv_addr, serv_port, ws_loc, tun_dev, tun_addr, tun_serv_addr, tun_nm, tun_mtu, passwd):
         # WebSocket
         path = "ws://"+serv_addr+":"+serv_port+"/"+ws_loc
         wsfactory = WSClientFactory(path, debug=False)
         wsfactory.protocol = WSClientProto
         wsfactory.passwd = passwd
-        wsfactory.server = False
 
         # TUN device
-        client_tun = TUNReader(tun_dev, tun_addr, tun_serv_addr, tun_nm, tun_mtu, wsfactory)
-        reactor.addReader(client_tun)
-        wsfactory.tun = client_tun
+        tun = TUNReader(tun_dev, tun_addr, tun_serv_addr, tun_nm, tun_mtu, wsfactory)
+        reactor.addReader(tun)
+        wsfactory.tun = tun
 
         reactor.connectTCP(serv_addr, int(serv_port), wsfactory)
         reactor.run()
 
 
 banner = """
+
                  | | | (_) |              
   _ __ ___  _   _| | |_ _| |_ _   _ _ __  
  | '_ ` _ \| | | | | __| | __| | | | '_ \ 
  | | | | | | |_| | | |_| | |_| |_| | | | |
- |_| |_| |_|\__,_|_|\__|_|\__|\__,_|_| |_|
+ |_| |_| |_|\____|_|\__|_|\__|\____|_| |_|
 """
 
 def main():
     server = False
-
     for arg in sys.argv:
         if arg == "-s":
             server = True
 
-    print ""
     print banner
     print " =============================================="
     print " Multitun " + MT_VERSION
@@ -374,47 +374,51 @@ def main():
     print " =============================================="
     print ""
 
-    config = INIConfig(open(configfile))
+    config = INIConfig(open(CONF_FILE))
 
     serv_addr = config.all.serv_addr
     serv_port = config.all.serv_port
     ws_loc = config.all.ws_loc
     tun_nm = config.all.tun_nm
     tun_mtu = config.all.tun_mtu
-    passwd = config.all.password
+    serv_tun_addr = config.all.serv_tun_addr
 
     log.startLogging(sys.stdout)
-    if type(config.all.logfile) == 'str':
-        log.startLogging(open(config.all.logfile, 'w+'))
+    if type(config.all.logfile) == type(str()):
+        try:
+            log.startLogging(open(config.all.logfile, 'a'))
+        except:
+            log.msg("Couldn't open logfile.  Permissions?", logLevel=logging.INFO)
 
-    if len(passwd) == 0:
-        log.msg("Edit the configuration file to include a password", logLevel=logging.WARN)
-        sys.exit(EXIT_ERR)
-        
     if server == True:
+        users = literal_eval(config.server.users)
+        if len(users) == 0:
+            log.msg("No users specified in configuration file", logLevel=logging.WARN)
+            sys.exit(ERR)
+ 
         tun_dev = config.server.tun_dev
-        tun_addr = config.server.tun_addr
-        tun_client_addr = config.client.tun_addr
+        tun_client_addr = config.server.p2paddr
         webdir = config.server.webdir
 
-        log.msg("Starting multitun as a server", logLevel=logging.INFO)
-        logstr = ("Server listening on port %s") % (serv_port)
+        logstr = ("Starting multitun as a server on port %s") % (serv_port)
         log.msg(logstr, logLevel=logging.INFO)
 
-        server = Server(serv_addr, serv_port, ws_loc, tun_dev, tun_addr, tun_client_addr, tun_nm, tun_mtu, webdir, passwd)
+        server = Server(serv_addr, serv_port, ws_loc, tun_dev, serv_tun_addr, tun_client_addr, tun_nm, tun_mtu, webdir, users)
 
     else: # server != True
-        serv_addr = config.all.serv_addr
-        serv_port = config.all.serv_port
+        passwd = config.client.password
+        if len(passwd) == 0:
+            log.msg("Edit the configuration file to include a password", logLevel=logging.WARN)
+            sys.exit(ERR)
+
         tun_dev = config.client.tun_dev
         tun_addr = config.client.tun_addr
-        tun_serv_addr = config.server.tun_addr
+        serv_tun_addr = config.all.serv_tun_addr
 
-        log.msg("Starting multitun as a client", logLevel=logging.INFO)
-        logstr = ("Forwarding to %s:%s") % (serv_addr, int(serv_port))
+        logstr = ("Starting as client, forwarding to %s:%s") % (serv_addr, int(serv_port))
         log.msg(logstr, logLevel=logging.INFO)
 
-        client = Client(serv_addr, serv_port, ws_loc, tun_dev, tun_addr, tun_serv_addr, tun_nm, tun_mtu, passwd)
+        client = Client(serv_addr, serv_port, ws_loc, tun_dev, tun_addr, serv_tun_addr, tun_nm, tun_mtu, passwd)
 
 
 if __name__ == "__main__":

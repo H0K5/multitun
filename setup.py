@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 setup(
     name = 'multitun',
-    version = '0.6',
+    version = '0.7',
     packages = find_packages(),
     scripts = ['multitun.py'],
     description='Tunnel net traffic over a harmless looking WebSocket',
@@ -15,8 +15,7 @@ setup(
                       'autobahn >= 0.9.2',
                       'dpkt-fix == 1.7',
                       'pycrypto >= 2.6.1',
-                      'streql',
-                      'pbkdf2'
+                      'streql'
                       ],
 )
 
