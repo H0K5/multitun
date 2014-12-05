@@ -27,8 +27,8 @@ past systems that do things like deep-packet inspection to find
 conventional tunnels (e.g. ssh tunnel over port 80).
 
 Multiple users can access the server at a time, and With multitun's
-new updates, all clients can see each other, allowing you to create a
-covert VPN!
+new updates, all clients can see each other, and if you want you can
+create a covert VPN (see instructions below).
 
 Only users with valid passwords can use the tunnel.  Multitun may be used
 in conjunction with other common tools to enable port forwarding and
