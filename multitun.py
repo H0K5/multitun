@@ -1,6 +1,6 @@
 #!/usr/bin/env python2
 
-# multitun v0.7
+# multitun v0.8
 #
 # Joshua Davis (multitun -*- covert.codes)
 # http://covert.codes
@@ -42,7 +42,7 @@ from twisted.web.server import Site
 from twisted.web.static import File
 from twisted.python import log
 
-MT_VERSION= "v0.7"
+MT_VERSION= "v0.8"
 CONF_FILE = "multitun.conf"
 ERR = -1
 
@@ -342,7 +342,6 @@ class Client(object):
 
         # TUN device
         tun = TUNReader(tun_dev, tun_addr, tun_serv_addr, tun_nm, tun_mtu, wsfactory)
-        reactor.addReader(tun)
         wsfactory.tun = tun
 
         reactor.connectTCP(serv_addr, int(serv_port), wsfactory)

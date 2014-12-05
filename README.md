@@ -6,7 +6,7 @@
      |_| |_| |_|\____|_|\__|_|\__|\____|_| |_|
 
 
-multitun v0.7 -- 'Tunnel all the things!'
+multitun v0.8 -- 'Tunnel all the things!'
 
 Joshua Davis (multitun -!- covert.codes)  
 http://covert.codes  
@@ -21,18 +21,19 @@ Tunnel everything over a harmless looking WebSocket!
 
 Multitun tunnels IPv4 over a WebSocket (RFC 6455), allowing bulk tunneling
 through one connection on, for example, port 80.  One use for this is to
-bypass firewalls by having a multitun server listening on a host outside
-the firewall, and using a multitun client on the host behind the firewall.
-Firewalls that allow web and HTML5 are assumed to allow WebSockets as well,
-and in theory multitun traffic quietly slips past systems that do things like
-deep-packet inspection to find conventional tunnels (e.g. ssh tunnel over
-port 80).
+bypass strict firewalls.  Firewalls that allow web and HTML5 are assumed
+to allow WebSockets as well, and multitun traffic quietly slips
+past systems that do things like deep-packet inspection to find
+conventional tunnels (e.g. ssh tunnel over port 80).
+
+Multiple users can access the server at a time, and With multitun's
+new updates, all clients can see each other, allowing you to create a
+covert VPN!
 
 Only users with valid passwords can use the tunnel.  Multitun may be used
 in conjunction with other common tools to enable port forwarding and
 masquerading (see the Examples section below), and thus route arbitrary or
-all client traffic through the Multitun server.  Multiple multitun clients
-can access the same multitun server at the same time.
+all client traffic through the Multitun server.
 
 Multitun provides a simple web server to serve HTML to connecting clients that
 don't know about or aren't using the WebSocket tunnel.
@@ -41,7 +42,11 @@ don't know about or aren't using the WebSocket tunnel.
 Installation
 ============
 
-* Designed under Linux, with Python 2.7.
+* Designed with Python 2.7
+
+* Linux version tested under Fedora/CentOS, Arch, Ubuntu, BlackArch, Kali
+
+* Mac/BSD client in the 'bsd_client' subdir.  Tested under MacOS X Yosemite, FreeBSD 10
 
 * You will need to install python-devel (aka python-dev), pip for python 2.7,
 	and setuptools
@@ -147,6 +152,11 @@ Examples
     ip route del default  
     ip route add default via [client multitun local ip] dev [client tun] proto static  
 
+  * You can man a covert VPN over WebSockets by applying these rules
+    on the server:
+
+    iptables -t nat -A POSTROUTING -s 10.10.0.0/24 -o tun1 -j MASQUERADE
+    echo 0 > /proc/sys/net/ipv4/conf/tun1/send_redirects
 
 Bugs
 ====

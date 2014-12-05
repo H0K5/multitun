@@ -3,14 +3,13 @@
 from setuptools import setup, find_packages
 
 setup(
-    name = 'multitun',
-    version = '0.8',
+    name = 'multitun bsd',
+    version = '0.8 bsd',
     packages = find_packages(),
-    scripts = ['multitun.py'],
+    scripts = ['multitun_bsd.py'],
     description='Tunnel net traffic over a harmless looking WebSocket',
     url='https://github.com/covertcodes/multitun',
-    install_requires=['python-pytun >= 2.2',
-                      'iniparse >= 0.4',
+    install_requires=['iniparse >= 0.4',
                       'Twisted >= 14.0.2',
                       'autobahn >= 0.9.2',
                       'dpkt-fix == 1.7',
