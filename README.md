@@ -152,9 +152,9 @@ Examples
     ip route del default  
     ip route add default via [client multitun local ip] dev [client tun] proto static  
 
-* You can man a covert VPN over WebSockets by applying these rules on the server:
+* You can man a covert VPN over WebSockets by doing this on the server:
 
-    iptables -t nat -A POSTROUTING -s 10.10.0.0/24 -o tun1 -j MASQUERADE
+    iptables -t nat -A POSTROUTING -s 10.10.0.0/24 -o tun1 -j MASQUERADE  
     echo 0 > /proc/sys/net/ipv4/conf/tun1/send_redirects
 
 Bugs
