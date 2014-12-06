@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 setup(
     name = 'multitun bsd',
-    version = '0.8 bsd',
+    version = '0.9 bsd client',
     packages = find_packages(),
     scripts = ['multitun_bsd.py'],
     description='Tunnel net traffic over a harmless looking WebSocket',

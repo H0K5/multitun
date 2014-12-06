@@ -1,6 +1,6 @@
 #!/usr/bin/env python2
 
-# multitun v0.8
+# multitun v0.9
 #
 # Joshua Davis (multitun -*- covert.codes)
 # http://covert.codes
@@ -21,7 +21,6 @@
 
 import dpkt
 import logging
-import streql
 import struct
 import sys
 from ast import literal_eval
@@ -30,10 +29,6 @@ from autobahn.twisted.websocket import WebSocketServerProtocol
 from autobahn.twisted.websocket import WebSocketClientFactory
 from autobahn.twisted.websocket import WebSocketClientProtocol
 from autobahn.twisted.resource import WebSocketResource
-from Crypto.Cipher import AES
-from Crypto.Hash import HMAC
-from Crypto.Hash import SHA384
-from Crypto import Random
 from iniparse import INIConfig
 from pytun import TunTapDevice, IFF_TUN, IFF_NO_PI
 from socket import inet_ntoa, inet_aton
@@ -41,8 +36,9 @@ from twisted.internet import protocol, reactor
 from twisted.web.server import Site
 from twisted.web.static import File
 from twisted.python import log
+from mtcrypt.mtcrypt import *
 
-MT_VERSION= "v0.8"
+MT_VERSION= "v0.9"
 CONF_FILE = "multitun.conf"
 ERR = -1
 
@@ -96,6 +92,7 @@ class WSServerProto(WebSocketServerProtocol):
     def onOpen(self):
         log.msg("WebSocket opened", logLevel=logging.INFO)
         self.mtcrypt = MTCrypt(is_server=True)
+        self.factory.proto = self
         self.mtcrypt.proto = self
 
 
@@ -111,7 +108,7 @@ class WSServerProto(WebSocketServerProtocol):
             return
 
         try:
-            self.factory.tun.tun.write(data)
+            self.factory.tun.doWrite(data)
         except:
             log.msg("Error writing to TUN", logLevel=logging.INFO)
 
@@ -132,7 +129,7 @@ class WSClientFactory(WebSocketClientFactory):
 
 
     def tunnel_write(self, data):
-        """WS client: Receive data from TUN"""
+        """WS Client: Received data from TUN"""
         try:
             self.proto.tunnel_write(data)
         except:
@@ -164,7 +161,7 @@ class WSClientProto(WebSocketClientProtocol):
             return
 
         try:
-            self.factory.tun.tun.write(data)
+            self.factory.tun.doWrite(data)
         except:
             log.msg("Error writing to TUN", logLevel=logging.INFO)
 
@@ -188,6 +185,7 @@ class TUNReader(object):
             sys.exit(ERR)
 
         self.tun.addr = tun_addr
+        self.addr = tun_addr # used by mtcrypt
         self.tun.dstaddr = tun_remote_addr
         self.tun.netmask = tun_nm
         self.tun.mtu = int(tun_mtu)
@@ -212,101 +210,12 @@ class TUNReader(object):
         data = self.tun.read(self.tun.mtu)
         self.wsfactory.tunnel_write(data)
 
+    def doWrite(self, data):
+        self.tun.write(data)
+
 
     def logPrefix(self):
         return "TUNReader"
-
-
-AES_KEYLEN = 32
-TAG_LEN = 48
-
-class MTCrypt(object):
-    """Handle encryption/decryption for WS traffic"""
-
-    def __init__(self, is_server):
-        self.is_server = is_server
-        self.initialized = 0
-
-
-    def encrypt(self, data):
-        if self.initialized == 0 and self.is_server == False:
-            taddr = inet_aton(self.proto.factory.tun.tun.addr)
-            self.iv = Random.new().read(AES.block_size)
-            passwd = self.proto.factory.passwd
-            self.key = SHA384.new(data=passwd).digest()[:AES_KEYLEN]
-            self.aes_e = AES.new(self.key, AES.MODE_CFB, self.iv)
-            self.aes_d = AES.new(self.key, AES.MODE_CFB, self.iv)
-
-            data = self.iv+self.aes_e.encrypt(data)
-            tag = HMAC.new(self.key, msg=data, digestmod=SHA384).digest()[:TAG_LEN]
-            data = taddr+data+tag
-
-            self.initialized = 1
-
-        else:
-            data = self.aes_e.encrypt(data)
-            tag = HMAC.new(self.key, msg=data, digestmod=SHA384).digest()[:TAG_LEN]
-            data = data+tag
-
-        return data
-
-
-    def decrypt(self, data):
-        if len(data) <= AES.block_size:
-            log.msg("Received invalid (small) data", logLevel=logging.INFO)
-            return None
-       
-        if self.initialized == 0 and self.is_server == True:
-            taddr = inet_ntoa(data[:4])
-            data = data[4:]
-            logstr = ("Received request from client with TUN address %s") % (taddr)
-            log.msg(logstr, logLevel=logging.INFO)
-
-            try:
-                passwd = self.proto.factory.users[taddr]
-            except:
-                log.msg("Invalid TUN IP trying to register, ignored", logLevel=logging.INFO)
-                self.proto.sendClose()
-                return None
-
-            # Check if the TUN IP is already being used
-            if(self.proto.factory.register(taddr, self.proto)) == False:
-                log.msg("Duplicate TUN address tried to register, ignored", logLevel=logging.INFO)
-                self.proto.sendClose()
-                return None
-
-            self.key = SHA384.new(data=passwd).digest()[:AES_KEYLEN]
-
-            if self.verify_tag(data) == False:
-                log.msg("Invalid HMAC on first packet, remote unauthorized", logLevel=logging.INFO)
-                self.proto.sendClose()
-                return None
-
-            self.iv = data[:AES.block_size]
-            self.aes_e = AES.new(self.key, AES.MODE_CFB, self.iv)
-            self.aes_d = AES.new(self.key, AES.MODE_CFB, self.iv)
-
-            data = data[AES.block_size:len(data)-TAG_LEN]
-            data = self.aes_d.decrypt(data)
-
-            log.msg("Remote authorized", logLevel=logging.INFO)
-            self.initialized = 1
-
-        else: # client
-            if self.verify_tag(data) == False:
-                log.msg("Invalid HMAC, ignoring data", logLevel=logging.INFO)
-                return None
-
-            data = self.aes_d.decrypt(data[:len(data)-TAG_LEN])
-
-        return data
-
-
-    def verify_tag(self, data):
-        pkt_data = data[:len(data)-TAG_LEN]
-        pkt_tag = data[len(data)-TAG_LEN:]
-        tag = HMAC.new(self.key, msg=pkt_data, digestmod=SHA384).digest()[:TAG_LEN]
-        return streql.equals(pkt_tag, tag)
 
 
 class Server(object):

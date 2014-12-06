@@ -6,7 +6,7 @@
      |_| |_| |_|\____|_|\__|_|\__|\____|_| |_|
 
 
-multitun v0.8 -- 'Tunnel all the things!'
+multitun v0.9 -- 'Tunnel all the things!'
 
 Joshua Davis (multitun -!- covert.codes)  
 http://covert.codes  
@@ -46,7 +46,7 @@ Installation
 
 * Linux version tested under Fedora/CentOS, Arch, Ubuntu, BlackArch, Kali
 
-* Mac/BSD client in the 'bsd_client' subdir.  Tested under MacOS X Yosemite, FreeBSD 10
+* Mac/BSD client tested under MacOS X Yosemite, FreeBSD 10
 
 * You will need to install python-devel (aka python-dev), pip for python 2.7,
 	and setuptools
@@ -55,7 +55,7 @@ Installation
 
 * Change the configuration file permissions to keep the password from others
 
-* Tested in Fedora/CentOS, Arch, Ubuntu, BlackArch, Kali
+* Note: Uses AES, so be aware of export laws, etc.
 
 
 Usage
@@ -154,8 +154,9 @@ Examples
 
 * You can man a covert VPN over WebSockets by doing this on the server:
 
-    iptables -t nat -A POSTROUTING -s 10.10.0.0/24 -o tun1 -j MASQUERADE  
-    echo 0 > /proc/sys/net/ipv4/conf/tun1/send_redirects
+    iptables -t nat -A POSTROUTING -s 10.10.0.0/24 -o tun0 -j MASQUERADE  
+     (tun0 is the server TUN interface)
+
 
 Bugs
 ====

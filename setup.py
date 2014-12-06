@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 setup(
     name = 'multitun',
-    version = '0.8',
+    version = '0.9',
     packages = find_packages(),
     scripts = ['multitun.py'],
     description='Tunnel net traffic over a harmless looking WebSocket',

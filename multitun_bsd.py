@@ -1,6 +1,6 @@
 #!/usr/bin/env python2
 
-# multitun v0.8 BSD
+# multitun v0.9 BSD Client
 #
 # Joshua Davis (multitun -*- covert.codes)
 # http://covert.codes
@@ -30,13 +30,14 @@ from Crypto.Hash import HMAC
 from Crypto.Hash import SHA384
 from Crypto import Random
 from iniparse import INIConfig
+from mtcrypt.mtcrypt import *
 from socket import inet_ntoa, inet_aton
 from subprocess import call
 from twisted.internet import protocol, reactor
 from twisted.web.static import File
 from twisted.python import log
 
-MT_VERSION= "v0.8 BSD"
+MT_VERSION= "v0.9 BSD Client"
 CONF_FILE = "multitun.conf"
 ERR = -1
 
@@ -44,14 +45,6 @@ ERR = -1
 class WSClientFactory(WebSocketClientFactory):
     def __init__(self, path, debug, debugCodePaths=False):
         WebSocketClientFactory.__init__(self, path, debug=debug, debugCodePaths=False)
-
-
-    def tunnel_write(self, data):
-        """WS client: Receive data from TUN"""
-        try:
-            self.proto.tunnel_write(data)
-        except:
-            log.msg("Couldn't reach the server over the WebSocket", logLevel=logging.INFO)
 
 
 class WSClientProto(WebSocketClientProtocol):
@@ -87,7 +80,10 @@ class WSClientProto(WebSocketClientProtocol):
     def tunnel_write(self, data):
         """Client: TUN sends data through WebSocket to server"""
         data = self.mtcrypt.encrypt(data)
-        self.sendMessage(data, isBinary=True)
+        try:
+            self.sendMessage(data, isBinary=True)
+        except:
+            log.msg("Couldn't send through WebSocket", logLevel=logging.INFO)
 
 
 class TUNReader(object):
@@ -96,6 +92,7 @@ class TUNReader(object):
     def __init__(self, tun_dev, tun_addr, tun_remote_addr, tun_nm, tun_mtu, wsfactory):
         self.tun_dev = tun_dev
         self.tun_addr = tun_addr
+        self.addr = tun_addr # used by mtcrypt
         self.tun_remote_addr = tun_remote_addr
         self.tun_nm = tun_nm
         self.tun_mtu = int(tun_mtu)
@@ -128,7 +125,7 @@ class TUNReader(object):
     def doRead(self):
         """Read from host, send to WS to be sent to distant end"""
         data = os.read(self.tunfd, self.tun_mtu)
-        self.wsfactory.tunnel_write(data)
+        self.wsfactory.proto.tunnel_write(data)
 
     def doWrite(self, data):
         """Write to TUN"""
@@ -136,61 +133,6 @@ class TUNReader(object):
 
     def logPrefix(self):
         return "TUNReader"
-
-
-AES_KEYLEN = 32
-TAG_LEN = 48
-
-class MTCrypt(object):
-    """Handle encryption/decryption for WS traffic"""
-
-    def __init__(self, is_server):
-        self.is_server = is_server
-        self.initialized = 0
-
-
-    def encrypt(self, data):
-        if self.initialized == 0:
-            taddr = inet_aton(self.proto.factory.tun.tun_addr)
-            self.iv = Random.new().read(AES.block_size)
-            passwd = self.proto.factory.passwd
-            self.key = SHA384.new(data=passwd).digest()[:AES_KEYLEN]
-            self.aes_e = AES.new(self.key, AES.MODE_CFB, self.iv)
-            self.aes_d = AES.new(self.key, AES.MODE_CFB, self.iv)
-
-            data = self.iv+self.aes_e.encrypt(data)
-            tag = HMAC.new(self.key, msg=data, digestmod=SHA384).digest()[:TAG_LEN]
-            data = taddr+data+tag
-
-            self.initialized = 1
-
-        else:
-            data = self.aes_e.encrypt(data)
-            tag = HMAC.new(self.key, msg=data, digestmod=SHA384).digest()[:TAG_LEN]
-            data = data+tag
-
-        return data
-
-
-    def decrypt(self, data):
-        if len(data) <= AES.block_size:
-            log.msg("Received invalid (small) data", logLevel=logging.INFO)
-            return None
-       
-        if self.verify_tag(data) == False:
-            log.msg("Invalid HMAC, ignoring data", logLevel=logging.INFO)
-            return None
-
-        data = self.aes_d.decrypt(data[:len(data)-TAG_LEN])
-
-        return data
-
-
-    def verify_tag(self, data):
-        pkt_data = data[:len(data)-TAG_LEN]
-        pkt_tag = data[len(data)-TAG_LEN:]
-        tag = HMAC.new(self.key, msg=pkt_data, digestmod=SHA384).digest()[:TAG_LEN]
-        return streql.equals(pkt_tag, tag)
 
 
 class Client(object):
