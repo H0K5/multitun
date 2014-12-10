@@ -7,6 +7,7 @@
 
 2) As root: ./setup.py install
 
+3) Edit the configuration file and change its permissions
 
 #
 # Multitun BSD/MacOS installation instructions
@@ -20,6 +21,7 @@
 
 3) Run ./setup.py install
 
+4) Edit the configuration file and change its permissions
 
 #
 # Multitun Windows installation instructions
@@ -53,6 +55,5 @@
 
 8) In the multitun directory: setup.py install
 
-9) In the configuration file, set tun_dev equal to the name of the TAP
-   interface you set in step 3
+9) Edit the configuration file and change its permissions
 
