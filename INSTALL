@@ -1,0 +1,58 @@
+#
+# Multitun Linux installation instructions
+#
+
+1) Install python-devel (aka python-dev), pip for python 2.7,
+   and setuptools
+
+2) As root: ./setup.py install
+
+
+#
+# Multitun BSD/MacOS installation instructions
+#
+
+1) Install TUN support
+  For Mac you might use: http://tuntaposx.sourceforge.net/
+  For BSD TUN may be enabled by default (verify with: ls /dev/tun0)
+
+2) Install setuptools
+
+3) Run ./setup.py install
+
+
+#
+# Multitun Windows installation instructions
+#
+
+1) Download and install tap-windows from https://openvpn.net
+
+2) In my case, the TAP interface was in the control panel after tap-windows
+   installation (Control Panel->Network and Internet->Network Connections).
+   If not, you might have to run (Start->TAP-Windows->Utilities->Add a new
+   TAP virtual ethernet adapter) first.
+
+3) Rename the adapter by right clicking.  You may want to rename it 
+  'multitun'.  Edit the adapter to use the multitun IP information, and
+  turn off everything except IPv4.  You might want to leave the 'default route'
+  in the TUN interface configuration blank.
+
+4) Download the latest Python 2 version from https://www.python.org/downloads/
+   Install, selecting the defaults
+
+5) Download pywin32 from http://sourceforge.net/projects/pywin32/ and install it.
+   You should install the py2.7 version for your architecture.  I think the
+   architecture of pywin32 has to match the architecture of the Python 2
+   version you installed... for me only the 32-bit version of pywin32 would
+   install.
+
+6) Download and install the Microsoft Visual C++ Compiler for Python 2.7:
+   http://aka.ms/vcpython27
+
+7) Run the ez_setup.py script on http://pypi.python.org/pypi/setuptools
+
+8) In the multitun directory: setup.py install
+
+9) In the configuration file, set tun_dev equal to the name of the TAP
+   interface you set in step 3
+

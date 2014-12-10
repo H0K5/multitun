@@ -1,6 +1,6 @@
 #!/usr/bin/env python2
 
-# multitun v0.9
+# multitun v0.10
 #
 # Joshua Davis (multitun -*- covert.codes)
 # http://covert.codes
@@ -30,7 +30,6 @@ from autobahn.twisted.websocket import WebSocketClientFactory
 from autobahn.twisted.websocket import WebSocketClientProtocol
 from autobahn.twisted.resource import WebSocketResource
 from iniparse import INIConfig
-from pytun import TunTapDevice, IFF_TUN, IFF_NO_PI
 from socket import inet_ntoa, inet_aton
 from twisted.internet import protocol, reactor
 from twisted.web.server import Site
@@ -38,7 +37,32 @@ from twisted.web.static import File
 from twisted.python import log
 from mtcrypt.mtcrypt import *
 
-MT_VERSION= "v0.9"
+try:
+    import os
+    import pywintypes
+    import threading
+    import win32api
+    import win32event
+    import win32file
+    import _winreg as reg
+    WINDOWS = True
+    BSD = False
+    LINUX = False
+except:
+    WINDOWS = False
+
+    try:
+        from pytun import TunTapDevice, IFF_TUN, IFF_NO_PI
+        LINUX = True
+        BSD = False
+    except:
+        import os
+        from subprocess import call
+        LINUX = False
+        BSD = True
+
+
+MT_VERSION= "v0.10"
 CONF_FILE = "multitun.conf"
 ERR = -1
 
@@ -54,7 +78,7 @@ class WSServerFactory(WebSocketServerFactory):
 
 
     def tunnel_write(self, data):
-        """Server: receive data from tunnel"""
+        """Server: receive data from TUN, send to client"""
         taddr = inet_ntoa(dpkt.ip.IP(data)['dst'])
         try:
             dst_proto = self.clients[taddr]
@@ -172,50 +196,206 @@ class WSClientProto(WebSocketClientProtocol):
         self.sendMessage(data, isBinary=True)
 
 
-class TUNReader(object):
+if WINDOWS == True:
+    class TunRead(threading.Thread):
+        '''Read from localhost, send toward server'''
+
+        ETHERNET_MTU = 1500
+
+        def __init__(self, tun_handle, wsfactory):
+            self.tun_handle = tun_handle
+            self.wsfactory = wsfactory
+            self.goOn = True
+            self.overlappedRx = pywintypes.OVERLAPPED()
+            self.overlappedRx.hEvent = win32event.CreateEvent(None, 0, 0, None)
+
+            threading.Thread.__init__(self)
+            self.name = "tunRead"
+
+
+        def run(self):
+            rxbuffer = win32file.AllocateReadBuffer(self.ETHERNET_MTU)
+
+            while self.goOn:
+                l, data = win32file.ReadFile(self.tun_handle, rxbuffer, self.overlappedRx)
+                win32event.WaitForSingleObject(self.overlappedRx.hEvent, win32event.INFINITE)
+                self.overlappedRx.Offset = self.overlappedRx.Offset + len(data)
+                self.wsfactory.tunnel_write(data)
+
+
+        def close(self):
+            self.goOn = False
+
+
+class TUN(object):
     """TUN device"""
 
     def __init__(self, tun_dev, tun_addr, tun_remote_addr, tun_nm, tun_mtu, wsfactory):
+        self.tun_dev = tun_dev
+        self.tun_addr = tun_addr
+        self.addr = tun_addr # used by mtcrypt
+        self.tun_nm = tun_nm
+        self.tun_mtu = int(tun_mtu)
         self.wsfactory = wsfactory
 
-        try:
-            self.tun = TunTapDevice(name=tun_dev, flags=(IFF_TUN|IFF_NO_PI))
-        except:
-            log.msg("Couldn't open the TUN device.  Are you root?  Is the interface already in use?", logLevel=logging.WARN)
-            sys.exit(ERR)
+        if BSD == True:
+            try:
+                self.tunfd = os.open("/dev/"+tun_dev, os.O_RDWR)
+                call(["/sbin/ifconfig", tun_dev, tun_addr, tun_remote_addr, "up"])
+            except:
+                log.msg("Error opening TUN device.  In use?  Permissions?", logLevel=logging.WARN)
+                sys.exit(ERR)
 
-        self.tun.addr = tun_addr
-        self.addr = tun_addr # used by mtcrypt
-        self.tun.dstaddr = tun_remote_addr
-        self.tun.netmask = tun_nm
-        self.tun.mtu = int(tun_mtu)
-        self.tun.up()
+            reactor.addReader(self)
 
-        reactor.addReader(self)
-
-        logstr = ("Opened TUN device on %s") % (self.tun.name)
-        log.msg(logstr, logLevel=logging.INFO)
+            logstr = ("Opened TUN device on %s") % (self.tun_dev)
+            log.msg(logstr, logLevel=logging.INFO)
 
 
-    def fileno(self):
-        return self.tun.fileno()
+        elif LINUX == True:
+            try:
+                self.tun = TunTapDevice(name=tun_dev, flags=(IFF_TUN|IFF_NO_PI))
+            except:
+                log.msg("Error opening TUN device.  In use?  Permissions?", logLevel=logging.WARN)
+                sys.exit(ERR)
+
+            self.tun.addr = tun_addr
+            self.tun.dstaddr = tun_remote_addr
+            self.tun.netmask = tun_nm
+            self.tun.mtu = int(tun_mtu)
+            self.tun.up()
+
+            reactor.addReader(self)
+
+            logstr = ("Opened TUN device on %s") % (self.tun.name)
+            log.msg(logstr, logLevel=logging.INFO)
+
+        elif WINDOWS == True:
+            self.overlappedTx = pywintypes.OVERLAPPED()
+            self.overlappedTx.hEvent = win32event.CreateEvent(None, 0, 0, None)
+            
+            addr_tmp = self.tun_addr.split('.')
+            self.tun_ipv4_address = list()
+            for i in range(0, 4):
+                self.tun_ipv4_address.append(int(addr_tmp[i]))
+
+            nm_tmp = self.tun_nm.split('.')
+            self.tun_ipv4_netmask = list()
+            self.tun_ipv4_network = list()
+            for i in range(0, 4):
+                self.tun_ipv4_netmask.append(int(nm_tmp[i]))
+                self.tun_ipv4_network.append(int(addr_tmp[i]) & int(nm_tmp[i]))
+
+            self.TAP_IOCTL_CONFIG_POINT_TO_POINT = self.TAP_CONTROL_CODE(5, 0)
+            self.TAP_IOCTL_SET_MEDIA_STATUS = self.TAP_CONTROL_CODE(6, 0)
+            self.TAP_IOCTL_CONFIG_TUN = self.TAP_CONTROL_CODE(10, 0)
+
+            try:
+                self.tun_handle = self.openTunTap()
+            except:
+                log.msg("Could not open TUN device.  Permissions?", logLevel=logging.WARN)
+                sys.exit(ERR)
+
+            log.msg("Opened TUN device", logLevel=logging.INFO)
+
+            self.tunRead = TunRead(self.tun_handle, self.wsfactory)
+            self.tunRead.start()
 
 
+    if WINDOWS == True:
+        def doWrite(self, data):
+            win32file.WriteFile(self.tun_handle, data, self.overlappedTx)
+            win32event.WaitForSingleObject(self.overlappedTx.hEvent, win32event.INFINITE)
+            self.overlappedTx.Offset = self.overlappedTx.Offset + len(data)
+
+        def openTunTap(self):
+            guid = self.get_device_guid()
+
+            tun_handle = win32file.CreateFile(
+                r'\\.\Global\%s.tap' % guid,
+                win32file.GENERIC_READ    | win32file.GENERIC_WRITE,
+                win32file.FILE_SHARE_READ | win32file.FILE_SHARE_WRITE,
+                None, win32file.OPEN_EXISTING,
+                win32file.FILE_ATTRIBUTE_SYSTEM|win32file.FILE_FLAG_OVERLAPPED, None)
+
+            win32file.DeviceIoControl(tun_handle,
+                self.TAP_IOCTL_SET_MEDIA_STATUS,
+                '\x01\x00\x00\x00',
+                None)
+
+            configTunParam  = []
+            configTunParam += self.tun_ipv4_address
+            configTunParam += self.tun_ipv4_network
+            configTunParam += self.tun_ipv4_netmask
+            configTunParam  = ''.join([chr(b) for b in configTunParam])
+
+            win32file.DeviceIoControl(
+                tun_handle,
+                self.TAP_IOCTL_CONFIG_TUN,
+                configTunParam,
+                None)
+
+            return tun_handle
+
+
+        def get_device_guid(self):
+            ADAPTER_KEY         = r'SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002BE10318}'
+            TUNTAP_COMPONENT_ID = 'tap0901'
+
+            with reg.OpenKey(reg.HKEY_LOCAL_MACHINE, ADAPTER_KEY) as adapters:
+                try:
+                    for i in range(10000):
+                        key_name = reg.EnumKey(adapters, i)
+                        with reg.OpenKey(adapters, key_name) as adapter:
+                            try:
+                                component_id = reg.QueryValueEx(adapter, 'ComponentId')[0]
+                                if component_id == TUNTAP_COMPONENT_ID:
+                                    return reg.QueryValueEx(adapter, 'NetCfgInstanceId')[0]
+                            except WindowsError, err:
+                                pass
+                except WindowsError, err:
+                    pass
+
+
+        def CTL_CODE(self, device_type, function, method, access):
+            return (device_type << 16) | (access << 14) | (function << 2) | method;
+
+
+        def TAP_CONTROL_CODE(self, request, method):
+            return self.CTL_CODE(34, request, method, 0)
+
+    else: # not windows
+        def fileno(self):
+            if BSD == True:
+                return self.tunfd
+            else:
+                return self.tun.fileno()
+
+
+        def doRead(self):
+            """Read from host, send to WS toward distant end"""
+            if BSD == True:
+                data = os.read(self.tunfd, self.tun_mtu)
+            else:
+                data = self.tun.read(self.tun.mtu)
+
+            self.wsfactory.tunnel_write(data)
+
+
+        def doWrite(self, data):
+            if BSD == True:
+                os.write(self.tunfd, data)
+            else:
+                self.tun.write(data)
+
+
+    # all OS's
     def connectionLost(self, reason):
         log.msg("Connection lost", logLevel=logging.INFO)
 
 
-    def doRead(self):
-        """Read from host, send to WS to be sent to distant end"""
-        data = self.tun.read(self.tun.mtu)
-        self.wsfactory.tunnel_write(data)
-
-    def doWrite(self, data):
-        self.tun.write(data)
-
-
     def logPrefix(self):
-        return "TUNReader"
+        return "MT TUN"
 
 
 class Server(object):
@@ -233,9 +413,10 @@ class Server(object):
         site = Site(root)
 
         # TUN device
-        tun = TUNReader(tun_dev, tun_addr, tun_client_addr, tun_nm, tun_mtu, wsfactory)
-        reactor.addReader(tun)
+        tun = TUN(tun_dev, tun_addr, tun_client_addr, tun_nm, tun_mtu, wsfactory)
         wsfactory.tun = tun
+        if WINDOWS == False:
+            reactor.addReader(tun)
 
         reactor.listenTCP(int(serv_port), site)
         reactor.run()
@@ -247,10 +428,10 @@ class Client(object):
         path = "ws://"+serv_addr+":"+serv_port+"/"+ws_loc
         wsfactory = WSClientFactory(path, debug=False)
         wsfactory.protocol = WSClientProto
-        wsfactory.passwd = passwd
+        wsfactory.protocol.passwd = passwd
 
         # TUN device
-        tun = TUNReader(tun_dev, tun_addr, tun_serv_addr, tun_nm, tun_mtu, wsfactory)
+        tun = TUN(tun_dev, tun_addr, tun_serv_addr, tun_nm, tun_mtu, wsfactory)
         wsfactory.tun = tun
 
         reactor.connectTCP(serv_addr, int(serv_port), wsfactory)
@@ -294,6 +475,7 @@ def main():
     log.startLogging(sys.stdout)
     if type(config.all.logfile) == type(str()):
         try:
+            log.msg("Trying to open logfile for writing", logLevel=logging.INFO)
             log.startLogging(open(config.all.logfile, 'a'))
         except:
             log.msg("Couldn't open logfile.  Permissions?", logLevel=logging.INFO)
@@ -329,6 +511,16 @@ def main():
         client = Client(serv_addr, serv_port, ws_loc, tun_dev, tun_addr, serv_tun_addr, tun_nm, tun_mtu, passwd)
 
 
+def win_exit(sig, func=None):
+    os._exit(0)
+
+
 if __name__ == "__main__":
-    main()
+    if WINDOWS == True:
+        win32api.SetConsoleCtrlHandler(win_exit, True)
+
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit(0)
 

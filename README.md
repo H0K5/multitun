@@ -6,12 +6,20 @@
      |_| |_| |_|\____|_|\__|_|\__|\____|_| |_|
 
 
-multitun v0.9 -- 'Tunnel all the things!'
+multitun v0.10 -- 'Tunnel all the things!'
 
 Joshua Davis (multitun -!- covert.codes)  
 http://covert.codes  
 Copyright(C) 2014, Joshua Davis  
 Released under the GNU General Public License  
+
+
+Updates
+==============
+
+* Windows client (Windows server is xperimental)
+* BSD/Mac can be servers, in addition to Linux
+* Covert WebSocket VPN -- clients can see each other
 
 
 Introduction
@@ -48,10 +56,9 @@ Installation
 
 * Mac/BSD client tested under MacOS X Yosemite, FreeBSD 10
 
-* You will need to install python-devel (aka python-dev), pip for python 2.7,
-	and setuptools
+* Windows client tested under Windows 7 and Windows 8
 
-* As root: setup.py install
+* See the INSTALL file
 
 * Change the configuration file permissions to keep the password from others
 
