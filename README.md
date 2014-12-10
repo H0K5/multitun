@@ -17,7 +17,7 @@ Released under the GNU General Public License
 Updates
 ==============
 
-* Windows client (Windows server is xperimental)
+* Windows client (Windows server is experimental)
 * BSD/Mac can be servers, in addition to Linux
 * Covert WebSocket VPN -- clients can see each other
 
